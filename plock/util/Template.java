@@ -2,7 +2,7 @@ package plock.util;
 
 import java.util.*;
 import java.nio.file.*;
-import plock.CompileSourceInMemory;
+import plock.util.CompileSourceInMemory;
 
 // TODO: test unicode and octal escaping
 // TODO: handle $
@@ -18,10 +18,12 @@ public class Template {
             BASIC_ESCAPES[basicEscapes[i]] = basicEscapes[i+1];
         }
     }
-    private StringBuilder java = new StringBuilder("public String renderTemplate() {\n"
-          +"  StringBuilder out = new StringBuilder();\n  out.append(\n       \"");
-        
+    public interface Renderer { public String render(); } 
+    private final Renderer renderer;
+    private StringBuilder java = new StringBuilder();
+
     public Template(char[] tpl) throws Exception {
+        java.append("  StringBuilder out = new StringBuilder();\n  out.append(\n       \"");
         int start=0, end = tpl.length;
         for (int i=start; i<end; i++) {
             char c = tpl[i];
@@ -46,9 +48,9 @@ public class Template {
             }
         }
         buffToJava();
-        java.append("\");\n  return out.toString();\n}");
-        String rendered = (String)CompileSourceInMemory.runJavaMethod("renderTemplate", java.toString());
-        System.out.println(rendered);
+        java.append("\");\n  return out.toString();");
+        renderer = CompileSourceInMemory.<Renderer>createSimpleInstance(Renderer.class, java.toString());
+        System.out.println(renderer.render());
         buff=null;
         escapes=null;
         java=null;

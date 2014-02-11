@@ -9,15 +9,10 @@ import javax.tools.*;
 import javax.tools.JavaCompiler.CompilationTask;
 import javax.tools.JavaFileObject.Kind;
 
-// TODO: want hook for getting back classname/class bytes/method or something so can cache
-// TODO: create a Class concreteImplementation(Class c) where c is an interface with a single method
-// TODO: transform run to use the above and require a no-arg method
-// TODO: Builder pattern of TemplateInstances with defaults for stuff like imports
 public class CompileSourceInMemory {
   static final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
 
   public static void main(String args[]) throws Exception {
-      System.out.println(createSimpleImplCode(Runnable.class, "System.out.println(\"slow\");\nSystem.out.println(\"super\");"));
     runJavaFragment("System.out.println(\"slow\");\nSystem.out.println(\"super\");");
     runJavaFragment("System.out.println(\"fast\");");
   }
@@ -59,7 +54,7 @@ public class CompileSourceInMemory {
           classCode.append("package "+interfaceClass.getPackage().getName()+";\n");
       }
       classCode.append("public class Dynamic"+interfaceName+"Impl implements ");
-      classCode.append(interfaceName+" {\n");
+      classCode.append(interfaceClass.getName().replace('$','.')+" {\n");
       classCode.append("public "+method.getReturnType().getName()+" "+method.getName()+"(");
       int argNum=0;
       for (Class argType : method.getParameterTypes()) {
@@ -102,6 +97,7 @@ public class CompileSourceInMemory {
         };
         return (Class<T>)Class.forName(fullClassName, true, transientClassLoader);
     } else {
+        System.out.println(classCode);
 	    for (Diagnostic<?> diagnostic : diagnostics.getDiagnostics()) {
 	      System.out.println(diagnostic.getCode());
 	      System.out.println(diagnostic.getKind());

@@ -13,8 +13,10 @@ public class CompileSourceInMemory {
   static final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
 
   public static void main(String args[]) throws Exception {
-    runJavaFragment("System.out.println(\"slow\");\nSystem.out.println(\"super\");");
-    runJavaFragment("System.out.println(\"fast\");");
+	runJavaFragment("System.out.println(\"slow\");\nSystem.out.println(\"super\");");
+	for (int i=0; i<5; i++) {
+	    runJavaFragment("System.out.println(\"fast\");");
+	}
   }
   public static void runJavaFragment(final String code) throws Exception {
         Runnable runnable = createSimpleInstance(Runnable.class, code);
@@ -66,6 +68,7 @@ public class CompileSourceInMemory {
       return classCode.toString();
   }
   public static <T> Class<T> createClass(String fullClassName, final String classCode) throws Exception {
+	long start = System.currentTimeMillis();
     JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     URI uri = URI.create("string:///" + fullClassName.replace('.','/') + Kind.SOURCE.extension);
     SimpleJavaFileObject source = new SimpleJavaFileObject(uri, Kind.SOURCE) {
@@ -95,6 +98,8 @@ public class CompileSourceInMemory {
                 return defineClass(name, classBytes, 0, classBytes.length); 
             }
         };
+	float elapsed = ((System.currentTimeMillis()-start)/1000.0f);
+	System.out.println("compiled "+fullClassName+" in "+elapsed+" seconds");
         return (Class<T>)Class.forName(fullClassName, true, transientClassLoader);
     } else {
         System.out.println(classCode);

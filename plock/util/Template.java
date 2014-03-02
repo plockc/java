@@ -2,10 +2,10 @@ package plock.util;
 
 import java.util.*;
 import java.nio.file.*;
-import plock.util.CompileSourceInMemory;
 
 // TODO: test unicode and octal escaping
 // TODO: handle $
+// TODO: Builder pattern of TemplateInstances with defaults for stuff like imports
 public class Template {
     private static final int BUFF_LENGTH = 1000;
     private static final Character[] BASIC_ESCAPES = new Character[256];

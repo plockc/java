@@ -1,8 +1,10 @@
 apply plugin: 'java'
+apply plugin: 'maven-publish'
 
 sourceCompatibility = 1.7
 
-version='.01'
+group='org.plock'
+version='0.01'
 
 repositories {
     mavenCentral()
@@ -21,6 +23,10 @@ sourceSets {
   test {
     output.classesDir = 'build'
   }
+}
+
+publishing {
+    publications { mavenJava(MavenPublication) { from components.java } }
 }
 
 test {

@@ -4,19 +4,22 @@ import java.lang.reflect.*;
 import java.net.URI;
 import java.util.Arrays;
 import java.io.*;
+import java.nio.file.*;
 
 import javax.tools.*;
 import javax.tools.JavaCompiler.CompilationTask;
 import javax.tools.JavaFileObject.Kind;
 
+/** on a 6 year old laptop, it takes less than 100ms to compile a trivially small class */
 public class CompileSourceInMemory {
   static final JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
 
   public static void main(String args[]) throws Exception {
-	runJavaFragment("System.out.println(\"slow\");\nSystem.out.println(\"super\");");
-	for (int i=0; i<5; i++) {
-	    runJavaFragment("System.out.println(\"fast\");");
-	}
+      if (args.length == 1) {
+          runJavaFragment(new String(Files.readAllBytes(Paths.get(args[0])), "UTF-8"));
+      } else {
+        runJavaFragment("System.out.println(\"try passing in a file as the first argument\");");
+      }
   }
   public static void runJavaFragment(final String code) throws Exception {
         Runnable runnable = createSimpleInstance(Runnable.class, code);

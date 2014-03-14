@@ -23,19 +23,23 @@ public class CompileSourceInMemory {
   }
   public static void runJavaFragment(final String code) throws Exception {
         Runnable runnable = createSimpleInstance(Runnable.class, code);
+        if (runnable == null) {throw new IllegalArgumentException("failed to compile source");}
         runnable.run();
   }
   public static <T> T createSimpleInstance(Class<T> interfaceClass, String code) throws Exception {
         Class<T> clazz = createSimpleImpl(interfaceClass, code);
+        if (clazz == null) {return null;}
         Constructor<?> constructor = clazz.getConstructor(new Class[] {});
         return (T)constructor.newInstance(new Object[] {});
   }
+  private static <T> String getPackageName(Class<T> interfaceClass) {
+      String packageName = interfaceClass.getPackage().getName();
+      return packageName.equals("java.lang") ? "" : packageName;
+  }
+
   public static <T> Class<T> createSimpleImpl(Class<T> interfaceClass, String codeFragment) throws Exception {
       StringBuilder className = new StringBuilder();
-      String packageName = interfaceClass.getPackage().getName();
-      if (packageName.equals("java.lang")) {
-          packageName="";
-      }
+      String packageName = getPackageName(interfaceClass);
       if (packageName.length() > 0) {
           className.append(interfaceClass.getPackage().getName()).append('.');
       }
@@ -51,10 +55,7 @@ public class CompileSourceInMemory {
       Method method = methods[0];
       String name = method.getName();
       StringBuilder classCode = new StringBuilder();
-      String packageName = interfaceClass.getPackage().getName();
-      if (packageName.equals("java.lang")) {
-          packageName="";
-      }
+      String packageName = getPackageName(interfaceClass);
       if (packageName.length() > 0) {
           classCode.append("package "+interfaceClass.getPackage().getName()+";\n");
       }
@@ -101,21 +102,20 @@ public class CompileSourceInMemory {
                 return defineClass(name, classBytes, 0, classBytes.length); 
             }
         };
-	float elapsed = ((System.currentTimeMillis()-start)/1000.0f);
-	System.out.println("compiled "+fullClassName+" in "+elapsed+" seconds");
+        float elapsed = ((System.currentTimeMillis()-start)/1000.0f);
+        System.out.println("compiled "+fullClassName+" in "+elapsed+" seconds");
         return (Class<T>)Class.forName(fullClassName, true, transientClassLoader);
     } else {
         System.out.println(classCode);
-	    for (Diagnostic<?> diagnostic : diagnostics.getDiagnostics()) {
-	      System.out.println(diagnostic.getCode());
-	      System.out.println(diagnostic.getKind());
-	      System.out.println(diagnostic.getPosition());
-	      System.out.println(diagnostic.getStartPosition());
-	      System.out.println(diagnostic.getEndPosition());
-	      System.out.println(diagnostic.getSource());
-	      System.out.println(diagnostic.getMessage(null));
-	    }
-      return null;
+        for (Diagnostic<?> diagnostic : diagnostics.getDiagnostics()) {
+            //System.out.println(diagnostic.getCode());
+            //System.out.println(diagnostic.getKind());
+            //System.out.println(diagnostic.getStartPosition());
+            //System.out.println(diagnostic.getEndPosition());
+            //System.out.println(diagnostic.getSource());
+            System.out.println(diagnostic.getMessage(null));
+        }
+        return null;
     }
   }
 }

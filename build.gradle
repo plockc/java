@@ -1,7 +1,7 @@
 apply plugin: 'java'
 apply plugin: 'maven-publish'
 
-sourceCompatibility = 1.7
+sourceCompatibility = 1.8
 
 group='org.plock'
 version='0.01'
@@ -37,5 +37,10 @@ test {
     afterTest {descriptor, event -> 
         logger.lifecycle("Test: "+descriptor+" produced out/err: "+event)
     }
+}
+
+task(testTemplate, dependsOn:'classes', type:JavaExec) {
+	main='plock.util.Template'
+	classpath = sourceSets.main.runtimeClasspath
 }
 

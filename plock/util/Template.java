@@ -11,13 +11,23 @@ import java.nio.file.*;
 // TODO: Builder pattern of TemplateInstances with defaults for stuff like imports
 // TODO: dealing with nulls, some template engines just print the string tag preservation), but we may want the null in some cases
 //       or provide a null default at least . . . try to avoid nullpointerexception (I like Chunk rules)
+
+// we set a marker for the entire current variable/expression, in case any part becomes null, I guess a method argument result can be null but an expression can not deref a null.  We need to provide this string representation to the created java source so it can use it in the case of a NullDerefException during evaluation
+
+// if an expression does not complete and end of template, just print out the remainder
+
 /** Text templates as input generate Java source when is then executed to build a string
  * @author Chris Plock - plockc@gmail.com
  */
 public class Template {
     /** for ascii character values (less than 256), any non-null entries provide the proper ascii escape */
     private static final Character[] BASIC_ESCAPES = new Character[256];
-    int pos = 0;
+    private int pos = 0; // the current position
+    private int exprStart = 0; // the start of the current expression
+    private StringBuilder java = new StringBuilder(); // this is the generated Java source class
+    private StringBuilder expr = new StringBuilder(); // current expression in case we try to deref null
+    private char[] tpl;
+   
     static {
         // initialize the escapes with pairs, the first in the pair is the actual character, the second, the
         // printable character that should come after the backslash
@@ -26,14 +36,21 @@ public class Template {
             BASIC_ESCAPES[basicEscapes[i]] = basicEscapes[i+1];
         }
     }
+    private static boolean[] buildMatchingArray(String matchChars) {
+	boolean[] matchingArray = new boolean[256];
+	for (int i=0; i<matchChars.length(); i++) {
+	    matchingArray[matchChars.charAt(i)]=true;
+	}
+	return matchingArray;
+    }
     /** code generated from the template will implement this interface and be executed */
     public interface Renderer { public String render(Map<String,Object> bindings); } 
 
     private Map<String,Object> bindings = new TreeMap<String,Object>();
     private final Renderer renderer;
     
-    public Template(char[] tpl) throws Exception {
-        StringBuilder java = new StringBuilder(); // this is the generated Java source class
+    public Template(final char[] source) throws Exception {
+	this.tpl = source;
         java.append("  StringBuilder out = new StringBuilder();\n  out.append(\n       \"");
         // Here we are processing the textual / non-code part of the template
         // generally copying stuff over, but paying attention to Template escaped characters, java escapes, 
@@ -52,9 +69,9 @@ public class Template {
                 pos++;
             } else if (c=='$') {
                 pos++;
-                java.append("\"+");
-                processInlineVariable(tpl, java);
-                java.append("+\"");
+                java.append("\"+(");
+                processInlineVariable();
+                java.append(")+\"");
             } else { 
                 // just a character so add it and track if it needs to be escaped
                 // control characters come before ' ', anything over '~' are either DEL or an 8 bit character
@@ -76,51 +93,68 @@ public class Template {
             }
         }
         java.append("\");\n  return out.toString();");
-        System.out.println(java);
         renderer = CompileSourceInMemory.<Renderer>createSimpleInstance(Renderer.class, java.toString());
+	if (renderer == null) {throw new RuntimeException("failed to compile template: \n"+java);}
     }
 
-    /** @return number of characters processed */
-    private void processInlineVariable(char[] tpl, StringBuilder java) {
-        if (tpl.length==pos || !Character.isLetter(tpl[pos])) {java.append('$'); return;}
-        StringBuilder varName = new StringBuilder().append(tpl[pos++]);
-        while(pos<tpl.length) {
-            char c = tpl[pos];
-            if (!Character.isJavaIdentifierPart(c)) {
-                if (c=='.') {
-                    java.append("arg0.get(\""+varName+"\").");
-                    pos++; processMethod(tpl, java);
-                    return;
-                }
-                break;
-            }
-            varName.append(c);
-            pos++;
-        } 
+    private static class ParseException extends RuntimeException {}
+    public static class EOFException extends RuntimeException {}
+    private char nextChar() {if (pos >= tpl.length) {throw new EOFException();} return tpl[pos++];}
+    private interface Scanner { public boolean scan(char c); } // true when you should stop
+    /* start on current letter, when returning pos will be on last letter, ready for nextChar */
+    private String scan(Scanner scanner) {
+	int start=pos;
+	while (pos < tpl.length && !scanner.scan(tpl[pos++]));
+	return new String(tpl, start, --pos-start);
+    }
+    private char copyUntil(String chars) {
+	boolean[] stopChars = buildMatchingArray(chars);
+	String copied = scan((c) -> stopChars[c]);
+	java.append(copied);
+	expr.append(copied);
+	return nextChar();
+    }
+
+    /** @return false if null deref and should just print the template expr */
+    private void processInlineVariable() {
+	// really need to get varName in one shot
+	String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
+	String varName = firstPart + scan((nextC) -> !Character.isJavaIdentifierPart(nextC));
+	if (varName.length() == 0) {java.append('$'); return;}
         java.append("arg0.get(\""+varName+"\")");
+	if (tpl[pos] == '.') {
+	    java.append(nextChar()); // this is the '.'
+	    processMethod();
+	}
+	// check for '$' for recursion variable
     }
 
-    private void processMethod(char[] tpl, StringBuilder java) {
-        if (tpl.length==pos || !Character.isLetter(tpl[pos])) {return;}
-        StringBuilder methodName = new StringBuilder().append(tpl[pos++]);
-        while(pos<tpl.length) {
-            char c = tpl[pos++];
-            if (!Character.isJavaIdentifierPart(c)) {
-                if (c=='.') {java.append(methodName).append("()."); pos++; processMethod(tpl, java);}
-                else if (c=='(') {
-                    java.append(methodName).append('(');
-                    pos++;
-                    processArg(tpl, java);
-                    java.append(')');
-                }
-                break;
-            }
-            methodName.append(c);
-        } 
+    private void processMethod() {
+	String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
+	String methodName = firstPart + scan((nextC) -> !Character.isJavaIdentifierPart(nextC));
+	if (methodName.length() == 0) {throw new RuntimeException("no deference name found");}
+	char c = nextChar();
+	if (c == '.') {
+	    // TODO: do other type of fancy derefs like var name, .get("key")
+	    java.append(methodName).append("()."); 
+	    pos++;
+	    processMethod();
+	} else if (c == '(') {
+	    java.append(methodName).append('(');
+	    processArgs();
+	    java.append(')');
+	}
+        return;
     }
-    private void processArg(char[] tpl, StringBuilder java) {
-        if (tpl.length==pos) {return;}
-        if (tpl[pos] != ')') {throw new RuntimeException("non-empty args not supported yet");}
+    private boolean processArgs() {
+	boolean noNullDeref = true;
+	char c = copyUntil("$,)");
+	if (c == ')') {return noNullDeref;}
+	if (c == ',') {
+	    java.append(','); expr.append(',');
+	    return processArgs();
+	}
+	return false;
     }
 
     public String render() {return renderer.render(bindings);}
@@ -139,7 +173,9 @@ public class Template {
             class Test {public void validate(String template, String result) throws Exception {
                 Template t = new Template(template.toCharArray());
                 String output = t.render(bindings);
-                if (!output.equals(result)) { throw new RuntimeException(output); }
+                if (!output.equals(result)) {
+		    throw new RuntimeException(t.java+"\n======\nexpected: "+result+"\nGot: "+output);
+		}
                 System.out.println(output);
             }}
             new Test().validate("Hello $greeting !", "Hello world !");

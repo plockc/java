@@ -100,12 +100,15 @@ public class Template {
     private static class ParseException extends RuntimeException {}
     public static class EOFException extends RuntimeException {}
     private char nextChar() {if (pos >= tpl.length) {throw new EOFException();} return tpl[pos++];}
+    private boolean nextEquals(char c) {if (pos >= tpl.length) return false; return tpl[pos]==c;}
+    private Template appendNext() {if (pos < tpl.length) {System.out.println("app: "+tpl[pos]); java.append(nextChar());} return this;}
     private interface Scanner { public boolean scan(char c); } // true when you should stop
-    /* start on current letter, when returning pos will be on last letter, ready for nextChar */
+    /* start on current letter, when returning pos will be ready for nextChar */
     private String scan(Scanner scanner) {
+	if (pos >= tpl.length) {return "";}
 	int start=pos;
-	while (pos < tpl.length && !scanner.scan(tpl[pos++]));
-	return new String(tpl, start, --pos-start);
+	while (pos < tpl.length && !scanner.scan(tpl[pos])) pos++;
+	return new String(tpl, start, pos-start);
     }
     private char copyUntil(String chars) {
 	boolean[] stopChars = buildMatchingArray(chars);
@@ -119,12 +122,13 @@ public class Template {
     private void processInlineVariable() {
 	// really need to get varName in one shot
 	String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
+	System.out.println("first "+firstPart+" len: "+tpl.length+" pos: "+pos);
 	String varName = firstPart + scan((nextC) -> !Character.isJavaIdentifierPart(nextC));
+	System.out.println("len: "+tpl.length+" pos: "+pos);
 	if (varName.length() == 0) {java.append('$'); return;}
         java.append("arg0.get(\""+varName+"\")");
-	if (tpl[pos] == '.') {
-	    java.append(nextChar()); // this is the '.'
-	    processMethod();
+	if (nextEquals('.')) {
+	    appendNext().processMethod(); // this is the '.'
 	}
 	// check for '$' for recursion variable
     }
@@ -169,7 +173,10 @@ public class Template {
             Template t= new Template(new String(Files.readAllBytes(Paths.get(args[0])),"UTF-8").toCharArray());
             System.out.println(t.render());
         } else {
-            final Map<String,Object> bindings = new HashMap<String,Object>() {{put("greeting", "world");}};
+            final Map<String,Object> bindings = new HashMap<String,Object>() {{
+		put("greeting", "world");
+		put("exclamation", "!");
+	    }};
             class Test {public void validate(String template, String result) throws Exception {
                 Template t = new Template(template.toCharArray());
                 String output = t.render(bindings);
@@ -178,8 +185,11 @@ public class Template {
 		}
                 System.out.println(output);
             }}
+            new Test().validate("Hello $greeting", "Hello world");
             new Test().validate("Hello $greeting !", "Hello world !");
             new Test().validate("Hello $greeting.length()", "Hello 5");
+            new Test().validate("Hello $greeting.length() is a lot", "Hello 5 is a lot");
+            new Test().validate("Hello $greeting$exclamation", "Hello world!");
         }
     }
 }

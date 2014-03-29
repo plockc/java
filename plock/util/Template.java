@@ -101,11 +101,11 @@ public class Template {
     public static class EOFException extends RuntimeException {}
     private char nextChar() {if (pos >= tpl.length) {throw new EOFException();} return tpl[pos++];}
     private boolean nextEquals(char c) {if (pos >= tpl.length) return false; return tpl[pos]==c;}
-    private Template appendNext() {if (pos < tpl.length) {System.out.println("app: "+tpl[pos]); java.append(nextChar());} return this;}
+    private Template appendNext() {if (pos < tpl.length) {java.append(nextChar());} return this;}
+    private Template append(Object ... stuff) {for (Object s : stuff) {java.append(s);} return this;}
     private interface Scanner { public boolean scan(char c); } // true when you should stop
     /* start on current letter, when returning pos will be ready for nextChar */
     private String scan(Scanner scanner) {
-	if (pos >= tpl.length) {return "";}
 	int start=pos;
 	while (pos < tpl.length && !scanner.scan(tpl[pos])) pos++;
 	return new String(tpl, start, pos-start);
@@ -122,43 +122,33 @@ public class Template {
     private void processInlineVariable() {
 	// really need to get varName in one shot
 	String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
-	System.out.println("first "+firstPart+" len: "+tpl.length+" pos: "+pos);
-	String varName = firstPart + scan((nextC) -> !Character.isJavaIdentifierPart(nextC));
-	System.out.println("len: "+tpl.length+" pos: "+pos);
+	String varName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
 	if (varName.length() == 0) {java.append('$'); return;}
         java.append("arg0.get(\""+varName+"\")");
 	if (nextEquals('.')) {
-	    appendNext().processMethod(); // this is the '.'
+	    appendNext().processMethod(); // add the '.' then process the method call
 	}
 	// check for '$' for recursion variable
     }
 
-    private void processMethod() {
+    private Template processMethod() {
 	String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
-	String methodName = firstPart + scan((nextC) -> !Character.isJavaIdentifierPart(nextC));
+	String methodName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
 	if (methodName.length() == 0) {throw new RuntimeException("no deference name found");}
 	char c = nextChar();
 	if (c == '.') {
 	    // TODO: do other type of fancy derefs like var name, .get("key")
-	    java.append(methodName).append("()."); 
-	    pos++;
-	    processMethod();
+	    append(methodName, "()").appendNext().processMethod();
 	} else if (c == '(') {
-	    java.append(methodName).append('(');
-	    processArgs();
-	    java.append(')');
+	    append(methodName,'(').processArgs().append(')');
 	}
-        return;
+        return this;
     }
-    private boolean processArgs() {
-	boolean noNullDeref = true;
+    private Template processArgs() {
 	char c = copyUntil("$,)");
-	if (c == ')') {return noNullDeref;}
-	if (c == ',') {
-	    java.append(','); expr.append(',');
-	    return processArgs();
-	}
-	return false;
+	if (c == ')') {return this;}
+	if (c == ',') { appendNext().processArgs(); }
+	return this;
     }
 
     public String render() {return renderer.render(bindings);}
@@ -183,13 +173,13 @@ public class Template {
                 if (!output.equals(result)) {
 		    throw new RuntimeException(t.java+"\n======\nexpected: "+result+"\nGot: "+output);
 		}
-                System.out.println(output);
+                System.out.println(template+"  -->  "+output);
             }}
             new Test().validate("Hello $greeting", "Hello world");
             new Test().validate("Hello $greeting !", "Hello world !");
+            new Test().validate("Hello $greeting$exclamation", "Hello world!");
             new Test().validate("Hello $greeting.length()", "Hello 5");
             new Test().validate("Hello $greeting.length() is a lot", "Hello 5 is a lot");
-            new Test().validate("Hello $greeting$exclamation", "Hello world!");
         }
     }
 }

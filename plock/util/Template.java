@@ -3,6 +3,7 @@ package plock.util;
 import java.util.*;
 import java.lang.Character.*;
 import java.nio.file.*;
+import java.lang.reflect.*;
 
 // TODO: on demand create the render instance, store the compiled string source code
 // TODO: test unicode and octal escaping
@@ -67,11 +68,19 @@ public class Template {
                     java.append("\\\\"); // a backlash escaped here, and again in the string of java source
                 }
                 pos++;
-            } else if (c=='$') {
-                pos++;
-                java.append("\"+(");
-                processInlineVariable();
-                java.append(")+\"");
+            } else if (c=='{') {
+                int curPos = pos;
+                nextChar();
+                if (nextEquals('$')) {
+                    consumeChar().append("\");\n");
+                    append("  try {out.append(");
+                    processInlineVariable().append(");}\n");
+                    String templateExpression = new String(tpl,curPos,pos-curPos);
+                    append("  catch (Template.BadReferenceException e) {out.append(\""+templateExpression+"\");}\n");
+                    append("  out.append(\n      \"");
+                    if (!nextEquals('}')) {throw new ParseException("missing closing '}' from expression");}
+                    nextChar();
+                }
             } else { 
                 // just a character so add it and track if it needs to be escaped
                 // control characters come before ' ', anything over '~' are either DEL or an 8 bit character
@@ -94,63 +103,99 @@ public class Template {
         }
         java.append("\");\n  return out.toString();");
         renderer = CompileSourceInMemory.<Renderer>createSimpleInstance(Renderer.class, java.toString());
-	if (renderer == null) {throw new RuntimeException("failed to compile template: \n"+java);}
+        if (renderer == null) {
+            throw new RuntimeException("failed to compile template: \n------"+new String(tpl)+"\n-----\n"+java);
+        }
     }
 
-    private static class ParseException extends RuntimeException {}
+    private static class ParseException extends RuntimeException {
+        ParseException(String message) {super(message);}
+    }
     public static class EOFException extends RuntimeException {}
+    /** used to tell the java source rendering this template that the expression attempted to use a null value,
+     *  and so should just print the expression
+     */
+    public static class BadReferenceException extends RuntimeException {
+        BadReferenceException(String message) {super(message);}
+    }
     private char nextChar() {if (pos >= tpl.length) {throw new EOFException();} return tpl[pos++];}
+    private Template consumeChar() {pos++; return this;}
     private boolean nextEquals(char c) {if (pos >= tpl.length) return false; return tpl[pos]==c;}
     private Template appendNext() {if (pos < tpl.length) {java.append(nextChar());} return this;}
     private Template append(Object ... stuff) {for (Object s : stuff) {java.append(s);} return this;}
     private interface Scanner { public boolean scan(char c); } // true when you should stop
     /* start on current letter, when returning pos will be ready for nextChar */
     private String scan(Scanner scanner) {
-	int start=pos;
-	while (pos < tpl.length && !scanner.scan(tpl[pos])) pos++;
-	return new String(tpl, start, pos-start);
+        int start=pos;
+        while (pos < tpl.length && !scanner.scan(tpl[pos])) pos++;
+        return new String(tpl, start, pos-start);
     }
     private char copyUntil(String chars) {
-	boolean[] stopChars = buildMatchingArray(chars);
-	String copied = scan((c) -> stopChars[c]);
-	java.append(copied);
-	expr.append(copied);
-	return nextChar();
+        boolean[] stopChars = buildMatchingArray(chars);
+        String copied = scan((c) -> stopChars[c]);
+        java.append(copied);
+        expr.append(copied);
+        return nextChar();
     }
 
+    // TODO: this can probably actually be run by processMethod
     /** @return false if null deref and should just print the template expr */
-    private void processInlineVariable() {
-	// really need to get varName in one shot
-	String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
-	String varName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
-	if (varName.length() == 0) {java.append('$'); return;}
-        java.append("arg0.get(\""+varName+"\")");
-	if (nextEquals('.')) {
-	    appendNext().processMethod(); // add the '.' then process the method call
-	}
-	// check for '$' for recursion variable
+    private Template processInlineVariable() {
+        // really need to get varName in one shot
+        String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
+        String varName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
+        if (varName.length() == 0) {java.append('$'); return this;}
+        if(nextEquals('.')) {
+            consumeChar().processMethod("arg0.get(\""+varName+"\")");
+        } else {
+            append("arg0.get(\""+varName+"\")");
+        }
+        return this;
+        // check for '$' for recursion variable
     }
 
-    private Template processMethod() {
-	String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
-	String methodName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
-	if (methodName.length() == 0) {throw new RuntimeException("no deference name found");}
-	char c = nextChar();
-	if (c == '.') {
-	    // TODO: do other type of fancy derefs like var name, .get("key")
-	    append(methodName, "()").appendNext().processMethod();
-	} else if (c == '(') {
-	    append(methodName,'(').processArgs().append(')');
-	}
+    private Template processMethod(String codeToEvalToObject) {
+        String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
+        String methodName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
+        if (methodName.length() == 0) {throw new ParseException("no deference name found");}
+        char c = nextChar();
+        if (c == '.') {
+            // TODO: do other type of fancy derefs like var name, .get("key")
+        } else if (c == '(') {
+            append("Template.invoke(\""+methodName+"\", "+codeToEvalToObject+", new Object[] {");
+            processArgs().append("})");
+        }
         return this;
     }
     private Template processArgs() {
-	char c = copyUntil("$,)");
-	if (c == ')') {return this;}
-	if (c == ',') { appendNext().processArgs(); }
-	return this;
+        char c = copyUntil("$,)");
+        if (c == ')') {return this;}
+        if (c == ',') { appendNext().processArgs(); }
+        return this;
     }
 
+    /** this is used by templates to find a reasonable method to call, right now it does
+     *  not do a good job of weighting multiple argument options */
+    public static Object invoke(String methodName, Object obj, Object[] args) throws BadReferenceException {
+        if (obj == null) {throw new BadReferenceException("attempted to call "+methodName+" on a null object");}
+        for(Method method : obj.getClass().getMethods()) {
+            Class[] paramClasses = method.getParameterTypes();
+            if (paramClasses.length != args.length) continue;
+            if (!method.getName().equals(methodName)) continue;
+            for (int i=0; i<paramClasses.length; i++) {
+                if (!paramClasses[i].isAssignableFrom(args[i].getClass())) continue;
+            }
+            try {
+                return method.invoke(obj, args); 
+            } catch (IllegalAccessException e) {System.out.println(methodName+" not accessible");
+            } catch (InvocationTargetException e) {
+                System.out.println("failed to invoke "+methodName); e.printStackTrace();
+            }
+        }
+
+        // TODO: provide types of parameters
+        throw new BadReferenceException("no "+obj.getClass().getSimpleName()+"."+methodName+"() matching arguments");
+    }
     public String render() {return renderer.render(bindings);}
     public String render(Map<String,Object> bindings) {
         this.bindings.putAll(bindings);
@@ -164,22 +209,28 @@ public class Template {
             System.out.println(t.render());
         } else {
             final Map<String,Object> bindings = new HashMap<String,Object>() {{
-		put("greeting", "world");
-		put("exclamation", "!");
-	    }};
+                put("greeting", "world");
+                put("exclamation", "!");
+            }};
             class Test {public void validate(String template, String result) throws Exception {
-                Template t = new Template(template.toCharArray());
-                String output = t.render(bindings);
-                if (!output.equals(result)) {
-		    throw new RuntimeException(t.java+"\n======\nexpected: "+result+"\nGot: "+output);
-		}
-                System.out.println(template+"  -->  "+output);
+                try {
+                    Template t = new Template(template.toCharArray());
+                    String output = t.render(bindings);
+                    if (!output.equals(result)) {
+                        throw new RuntimeException(t.java+"\n======\nexpected: "+result+"\nGot: "+output);
+                    }
+                    System.out.println(template+"  -->  "+output);
+                } catch (ParseException e) {
+                    throw new RuntimeException(template+"\n failed to parse: ",e);
+                }
             }}
-            new Test().validate("Hello $greeting", "Hello world");
-            new Test().validate("Hello $greeting !", "Hello world !");
-            new Test().validate("Hello $greeting$exclamation", "Hello world!");
-            new Test().validate("Hello $greeting.length()", "Hello 5");
-            new Test().validate("Hello $greeting.length() is a lot", "Hello 5 is a lot");
+            new Test().validate("Hello $greeting", "Hello $greeting");
+            new Test().validate("Hello {$greeting}", "Hello world");
+            new Test().validate("Hello {$greeting}", "Hello world");
+            new Test().validate("Hello {$greeting} !", "Hello world !");
+            new Test().validate("Hello {$greeting}{$exclamation}", "Hello world!");
+            new Test().validate("Hello {$greeting.length()}", "Hello 5");
+            new Test().validate("Hello {$greeting.length()} is a lot", "Hello 5 is a lot");
         }
     }
 }

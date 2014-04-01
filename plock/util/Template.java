@@ -231,6 +231,9 @@ public class Template {
             new Test().validate("Hello {$greeting}{$exclamation}", "Hello world!");
             new Test().validate("Hello {$greeting.length()}", "Hello 5");
             new Test().validate("Hello {$greeting.length()} is a lot", "Hello 5 is a lot");
+            new Test().validate("Hello {$greeting.substring(1)}", "Hello orld");
+            new Test().validate("Hello {$greeting.substring(1, 3)}", "Hello or");
+            new Test().validate("Hello {$greeting.substring(1, 3).length()}", "Hello 2");
         }
     }
 }

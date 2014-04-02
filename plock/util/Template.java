@@ -76,9 +76,12 @@ public class Template {
                     append("  try {out.append(");
                     processInlineVariable().append(");}\n");
                     String templateExpression = new String(tpl,curPos,pos-curPos);
-                    append("  catch (Template.BadReferenceException e) {out.append(\""+templateExpression+"\");}\n");
+                    append("  catch (Template.BadReferenceException e) {\n");
+                    append("    System.out.println(\"failed reference: \"+e); e.printStackTrace();\n");
+                    append("    out.append(\""+templateExpression+"\");");
+                    append("  }\n");
                     append("  out.append(\n      \"");
-                    if (!nextEquals('}')) {throw new ParseException("missing closing '}' from expression");}
+                    if (!nextEquals('}')) {throw new ParseException("missing closing '}' from expression:\n"+java);}
                     nextChar();
                 }
             } else { 
@@ -130,12 +133,9 @@ public class Template {
         while (pos < tpl.length && !scanner.scan(tpl[pos])) pos++;
         return new String(tpl, start, pos-start);
     }
-    private char copyUntil(String chars) {
-        boolean[] stopChars = buildMatchingArray(chars);
-        String copied = scan((c) -> stopChars[c]);
-        java.append(copied);
-        expr.append(copied);
-        return nextChar();
+    private String scanUntil(String chars) {
+       boolean[] matches = buildMatchingArray(chars); 
+       return scan((c) -> matches[c]);
     }
 
     // TODO: this can probably actually be run by processMethod
@@ -146,7 +146,9 @@ public class Template {
         String varName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
         if (varName.length() == 0) {java.append('$'); return this;}
         if(nextEquals('.')) {
-            consumeChar().processMethod("arg0.get(\""+varName+"\")");
+            while (nextEquals('.')) {
+                consumeChar().processMethod("arg0.get(\""+varName+"\")");
+            }
         } else {
             append("arg0.get(\""+varName+"\")");
         }
@@ -163,15 +165,18 @@ public class Template {
             // TODO: do other type of fancy derefs like var name, .get("key")
         } else if (c == '(') {
             append("Template.invoke(\""+methodName+"\", "+codeToEvalToObject+", new Object[] {");
-            processArgs().append("})");
+            append(processArgs()).append("})");
         }
         return this;
     }
-    private Template processArgs() {
-        char c = copyUntil("$,)");
-        if (c == ')') {return this;}
-        if (c == ',') { appendNext().processArgs(); }
-        return this;
+    private String processArgs() {
+        String arg = scanUntil("$,)");
+        char c = nextChar();
+        if (c == ')') {return arg;}
+        if (c == ',') { return arg+","+processArgs(); }
+        return "not implemented yet";
+        // must be '$'
+        // TODO: handle new expression, need to add "," as a possible stop for expression
     }
 
     /** this is used by templates to find a reasonable method to call, right now it does
@@ -221,7 +226,7 @@ public class Template {
                     }
                     System.out.println(template+"  -->  "+output);
                 } catch (ParseException e) {
-                    throw new RuntimeException(template+"\n failed to parse: ",e);
+                    throw new RuntimeException(template,e);
                 }
             }}
             new Test().validate("Hello $greeting", "Hello $greeting");

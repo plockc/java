@@ -214,6 +214,7 @@ public class Template {
             final Map<String,Object> bindings = new HashMap<String,Object>() {{
                 put("greeting", "world");
                 put("exclamation", "!");
+                put("two", 2);
             }};
             class Test {public void validate(String template, String result) throws Exception {
                 try {
@@ -237,6 +238,7 @@ public class Template {
             new Test().validate("Hello {$greeting.substring(1)}", "Hello orld");
             new Test().validate("Hello {$greeting.substring(1, 3)}", "Hello or");
             new Test().validate("Hello {$greeting.substring(1, 3).length()}", "Hello 2");
+            new Test().validate("Hello {$greeting.substring(1, $two)}", "Hello o");
         }
     }
 }

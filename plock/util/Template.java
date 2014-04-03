@@ -145,35 +145,33 @@ public class Template {
         String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
         String varName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
         if (varName.length() == 0) {java.append('$'); return this;}
-        if(nextEquals('.')) {
-            while (nextEquals('.')) {
-                consumeChar().processMethod("arg0.get(\""+varName+"\")");
-            }
-        } else {
-            append("arg0.get(\""+varName+"\")");
+        String codeToEvalToObject = "arg0.get(\""+varName+"\")";
+        while (nextEquals('.')) {
+            codeToEvalToObject = consumeChar().processMethod(codeToEvalToObject);
         }
+        append(codeToEvalToObject);
         return this;
         // check for '$' for recursion variable
     }
 
-    private Template processMethod(String codeToEvalToObject) {
+    private String processMethod(String codeToEvalToObject) {
         String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
         String methodName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
         if (methodName.length() == 0) {throw new ParseException("no deference name found");}
-        char c = nextChar();
-        if (c == '.') {
+        if (nextEquals('.')) {
             // TODO: do other type of fancy derefs like var name, .get("key")
-        } else if (c == '(') {
-            append("Template.invoke(\""+methodName+"\", "+codeToEvalToObject+", new Object[] {");
-            append(processArgs()).append("})");
+        } else if (nextEquals('(')) {
+            consumeChar();
+            String call="Template.invoke(\""+methodName+"\", "+codeToEvalToObject+", new Object[] {"+processArgs()+"})";
+            consumeChar();
+            return call;
         }
-        return this;
+        return methodName;
     }
     private String processArgs() {
         String arg = scanUntil("$,)");
-        char c = nextChar();
-        if (c == ')') {return arg;}
-        if (c == ',') { return arg+","+processArgs(); }
+        if (nextEquals(')')) {return arg;}
+        if (nextEquals(',')) { consumeChar(); return arg+","+processArgs(); }
         return "not implemented yet";
         // must be '$'
         // TODO: handle new expression, need to add "," as a possible stop for expression

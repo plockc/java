@@ -171,7 +171,7 @@ public class Template {
         String arg = scanUntil("$,)");
         if (nextEquals(')')) {return arg;}
         if (nextEquals(',')) { consumeChar(); return arg+","+processArgs(); }
-        if (nextEquals('$')) { consumeChar(); return processInlineVariable(); }
+        if (nextEquals('$')) { consumeChar(); return arg+processInlineVariable(); }
         return "not implemented yet";
         // must be '$'
         // TODO: handle new expression, need to add "," as a possible stop for expression
@@ -214,14 +214,16 @@ public class Template {
             final Map<String,Object> bindings = new HashMap<String,Object>() {{
                 put("greeting", "world");
                 put("exclamation", "!");
+                put("one", 1);
                 put("two", 2);
+                put("three", 3);
             }};
             class Test {public void validate(String template, String result) throws Exception {
                 try {
                     Template t = new Template(template.toCharArray());
                     String output = t.render(bindings);
                     if (!output.equals(result)) {
-                        throw new RuntimeException(t.java+"\n======\nexpected: "+result+"\nGot: "+output);
+                        throw new RuntimeException(template+"\n-------\n"+t.java+"\n======\nexpected: "+result+"\nGot: "+output);
                     }
                     System.out.println(template+"  -->  "+output);
                 } catch (ParseException e) {
@@ -236,9 +238,13 @@ public class Template {
             new Test().validate("Hello {$greeting.length()}", "Hello 5");
             new Test().validate("Hello {$greeting.length()} is a lot", "Hello 5 is a lot");
             new Test().validate("Hello {$greeting.substring(1)}", "Hello orld");
+            new Test().validate("Hello {$greeting.substring(3-2)}", "Hello orld");
             new Test().validate("Hello {$greeting.substring(1, 3)}", "Hello or");
             new Test().validate("Hello {$greeting.substring(1, 3).length()}", "Hello 2");
             new Test().validate("Hello {$greeting.substring(1, $two)}", "Hello o");
+            new Test().validate("Hello {$greeting.substring(3-$two)}", "Hello orld");
+            new Test().validate("Hello {$greeting.substring($three-2)}", "Hello orld");
+            new Test().validate("Hello {$greeting.substring($three-$two)}", "Hello orld");
         }
     }
 }

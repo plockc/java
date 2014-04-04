@@ -74,7 +74,7 @@ public class Template {
                 if (nextEquals('$')) {
                     consumeChar().append("\");\n");
                     append("  try {out.append(");
-                    processInlineVariable().append(");}\n");
+                    append(processInlineVariable()).append(");}\n");
                     String templateExpression = new String(tpl,curPos,pos-curPos);
                     append("  catch (Template.BadReferenceException e) {\n");
                     append("    System.out.println(\"failed reference: \"+e); e.printStackTrace();\n");
@@ -140,17 +140,16 @@ public class Template {
 
     // TODO: this can probably actually be run by processMethod
     /** @return false if null deref and should just print the template expr */
-    private Template processInlineVariable() {
+    private String processInlineVariable() {
         // really need to get varName in one shot
         String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
         String varName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
-        if (varName.length() == 0) {java.append('$'); return this;}
+        if (varName.length() == 0) {return "$";}
         String codeToEvalToObject = "arg0.get(\""+varName+"\")";
         while (nextEquals('.')) {
             codeToEvalToObject = consumeChar().processMethod(codeToEvalToObject);
         }
-        append(codeToEvalToObject);
-        return this;
+        return codeToEvalToObject;
         // check for '$' for recursion variable
     }
 
@@ -172,6 +171,7 @@ public class Template {
         String arg = scanUntil("$,)");
         if (nextEquals(')')) {return arg;}
         if (nextEquals(',')) { consumeChar(); return arg+","+processArgs(); }
+        if (nextEquals('$')) { consumeChar(); return processInlineVariable(); }
         return "not implemented yet";
         // must be '$'
         // TODO: handle new expression, need to add "," as a possible stop for expression

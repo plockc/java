@@ -23,10 +23,12 @@ import java.lang.reflect.*;
 public class Template {
     /** for ascii character values (less than 256), any non-null entries provide the proper ascii escape */
     private static final Character[] BASIC_ESCAPES = new Character[256];
+    private static final boolean[] charsInNumbers = buildMatchingArray("0123456789.");
+    private static final boolean[] numberOperators = buildMatchingArray("+-%*/");
+    private static final boolean[] booleanOperators = buildMatchingArray("><=&|!");
     private int pos = 0; // the current position
     private int exprStart = 0; // the start of the current expression
     private StringBuilder java = new StringBuilder(); // this is the generated Java source class
-    private StringBuilder expr = new StringBuilder(); // current expression in case we try to deref null
     private char[] tpl;
    
     static {
@@ -38,11 +40,11 @@ public class Template {
         }
     }
     private static boolean[] buildMatchingArray(String matchChars) {
-	boolean[] matchingArray = new boolean[256];
-	for (int i=0; i<matchChars.length(); i++) {
-	    matchingArray[matchChars.charAt(i)]=true;
-	}
-	return matchingArray;
+        boolean[] matchingArray = new boolean[256];
+        for (int i=0; i<matchChars.length(); i++) {
+            matchingArray[matchChars.charAt(i)]=true;
+        }
+        return matchingArray;
     }
     /** code generated from the template will implement this interface and be executed */
     public interface Renderer { public String render(Map<String,Object> bindings); } 
@@ -71,7 +73,10 @@ public class Template {
             } else if (c=='{') {
                 int curPos = pos;
                 nextChar();
-                if (nextEquals('$')) {
+                if (nextEquals("+\"")) {
+                    // TODO: process include
+                } else if (nextEquals('$') || nextEquals('+')) {
+                    // we are processing a bound variable or a numeric expression
                     consumeChar().append("\");\n");
                     append("  try {out.append(");
                     append(processInlineVariable()).append(");}\n");
@@ -121,29 +126,86 @@ public class Template {
     public static class BadReferenceException extends RuntimeException {
         BadReferenceException(String message) {super(message);}
     }
+    private enum Type { StringType, BooleanType, NumberType, NoType, BindType};
+    private static class Parsed {String before="", java; Type type=NoType;}
     private char nextChar() {if (pos >= tpl.length) {throw new EOFException();} return tpl[pos++];}
     private Template consumeChar() {pos++; return this;}
     private boolean nextEquals(char c) {if (pos >= tpl.length) return false; return tpl[pos]==c;}
+    private boolean nextEquals(String s) {
+        if (pos+s.length() > tpl.length) return false;
+        return new String(tpl, pos, s.length()).equals(s);
+    }
+    private boolean nextMatches(boolean[] matchSet) {return pos<tpl.length && matchSet[tpl[pos]];}
     private Template appendNext() {if (pos < tpl.length) {java.append(nextChar());} return this;}
     private Template append(Object ... stuff) {for (Object s : stuff) {java.append(s);} return this;}
     private interface Scanner { public boolean scan(char c); } // true when you should stop
-    /* start on current letter, when returning pos will be ready for nextChar */
+    /* start on current letter, scan until true, when returning pos will be ready for nextChar */
     private String scan(Scanner scanner) {
         int start=pos;
         while (pos < tpl.length && !scanner.scan(tpl[pos])) pos++;
         return new String(tpl, start, pos-start);
     }
+    private String scanUntilNoMatch(boolean[] matches) {scan((c) -> !matches[c];}
     private String scanUntil(String chars) {
        boolean[] matches = buildMatchingArray(chars); 
        return scan((c) -> matches[c]);
     }
-
+    private Parsed processTerm() {
+        if (nextMatches(numberOperators)) {
+            return new Parsed() {{java=scanUntilNoMatch(numberOperators); type=NumberType;}};
+        }
+        if (nextMatches(booleanOperators)) {
+            return new Parsed() {{java=scanUntilNoMatch(booleanOperators); type=BooleanType;}};
+        }
+        if (nextMatches(charsInNumbers)) {
+            return new Parsed() {{java=scanUntilNoMatch(charsInNumbers); type=NumberType;}};
+        }
+        Parsed parsed;
+        if (nextEquals('"') ) {
+            // TODO somewhat broken
+            // TODO process string much like a template
+            parsed.type = StringType;
+            parsed.java=scanUntil('"');
+        } else if (nextEquals('(')) {
+            Parsed subExpr = processExpression();
+            if (!nextEquals(')')) {throw new ParseException("need closing ')'");}
+            parsed.before=parsed.before+subExpr.before;
+            parsed.java='('+subExpr.java+')';
+            parsed.type=subExpr.type;
+        } else if (nextEquals('$')) {
+            parsed = processInlineVariable();
+        }
+        return parsed;
+    }
+    private Parsed processExpression() {
+        List<Parsed> terms = new LinkedList<Parsed>();
+        while (!nextEquals('}') && !nextEquals(')') && !nextEquals(',')) {
+            terms.add(processTerm());
+        }
+        Type exprType = NoType;
+        for (Parsed parsed : terms) {
+            Type termType = parsed.type;
+            // Boolean, Number, and Binding can all convert to string concatenation
+            if (termType == StringType) {exprType = StringType; break;}
+            if (termType == BooleanType) {exprType= BooleanType;}
+            if (termType == NumberType) {exprType = NumberType;}
+        }
+        StringBuilder expr = new StringBuilder();
+        for (Parsed term : terms) {
+            expr.append(term.before);
+            if (term.type != exprType) {expr.append('('+term.type+')');}
+            expr.append(term.java);
+        }
+        return new Parsed() {{java=expr.toString(); type=exprType;}}
+    }
     // TODO: this can probably actually be run by processMethod
     /** @return false if null deref and should just print the template expr */
-    private String processInlineVariable() {
+    private Parsed processInlineVariable() {
         // really need to get varName in one shot
         String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
         String varName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
+        // might need to force $ escapes for when this lone '$' shows in nested / complex expressions
+        // or throw exception to just print out the expression and produce a warning
         if (varName.length() == 0) {return "$";}
         String codeToEvalToObject = "arg0.get(\""+varName+"\")";
         while (nextEquals('.')) {
@@ -153,7 +215,7 @@ public class Template {
         // check for '$' for recursion variable
     }
 
-    private String processMethod(String codeToEvalToObject) {
+    private Parsed processMethod(String codeToEvalToObject) {
         String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
         String methodName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
         if (methodName.length() == 0) {throw new ParseException("no deference name found");}
@@ -163,18 +225,21 @@ public class Template {
             consumeChar();
             String call="Template.invoke(\""+methodName+"\", "+codeToEvalToObject+", new Object[] {"+processArgs()+"})";
             consumeChar();
-            return call;
+            return new Parsed() {{java=call;}};
         }
-        return methodName;
+        return new Parsed() {{java=methodName;}};
     }
+    // TODO need to track if current expr is numeric, even when rest of arg follows
     private String processArgs() {
-        String arg = scanUntil("$,)");
-        if (nextEquals(')')) {return arg;}
+        Parsed parsed = processExpression();
+        if (nextEquals(')')) {return parsed.java;}
         if (nextEquals(',')) { consumeChar(); return arg+","+processArgs(); }
-        if (nextEquals('$')) { consumeChar(); return arg+processInlineVariable(); }
+        // the processArgs call will finish the current argument before moving on to the next (or close paren)
+        if (nextEquals('$')) { 
+            consumeChar();
+            return arg+processExpression()+processArgs();
+        }
         return "not implemented yet";
-        // must be '$'
-        // TODO: handle new expression, need to add "," as a possible stop for expression
     }
 
     /** this is used by templates to find a reasonable method to call, right now it does
@@ -232,7 +297,6 @@ public class Template {
             }}
             new Test().validate("Hello $greeting", "Hello $greeting");
             new Test().validate("Hello {$greeting}", "Hello world");
-            new Test().validate("Hello {$greeting}", "Hello world");
             new Test().validate("Hello {$greeting} !", "Hello world !");
             new Test().validate("Hello {$greeting}{$exclamation}", "Hello world!");
             new Test().validate("Hello {$greeting.length()}", "Hello 5");
@@ -245,6 +309,10 @@ public class Template {
             new Test().validate("Hello {$greeting.substring(3-$two)}", "Hello orld");
             new Test().validate("Hello {$greeting.substring($three-2)}", "Hello orld");
             new Test().validate("Hello {$greeting.substring($three-$two)}", "Hello orld");
+            new Test().validate("Hello {$greeting.substring($three-$two+$one)}", "Hello rld");
+            new Test().validate("Hello {$greeting.substring(1, $three-$two+$one)}", "Hello or");
+            new Test().validate("Hello {$one+$two}", "Hello 3");
+            new Test().validate("Hello {$one+2}", "Hello 3");
         }
     }
 }

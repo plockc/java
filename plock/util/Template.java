@@ -80,9 +80,9 @@ public class Template {
                     // TODO: process include
                 } else if (nextEquals('$') || nextEquals('+')) {
                     // we are processing a bound variable or a numeric expression
-                    consumeChar().append("\");\n");
+                    append("\");\n");
                     append("  try {out.append(");
-                    append(processInlineVariable().java).append(");}\n");
+                    append(processExpression().java).append(");}\n");
                     String templateExpression = new String(tpl,curPos,pos-curPos);
                     append("  catch (Template.BadReferenceException e) {\n");
                     append("    System.out.println(\"failed reference: \"+e); e.printStackTrace();\n");
@@ -133,7 +133,7 @@ public class Template {
         StringType, BooleanType, LongType, DoubleType, NoType, BindType;
         public String toString() { return name().replaceAll("Type", ""); }
     }
-    private static class Parsed {String before="", java; Type type=Type.NoType;}
+    private static class Parsed {String java; Type type=Type.NoType;}
     private char nextChar() {if (pos >= tpl.length) {throw new EOFException();} return tpl[pos++];}
     private Template consumeChar() {pos++; return this;}
     private Template consume(boolean[] charsToEat) {while (charsToEat[tpl[pos]]) pos++; return this;}
@@ -178,7 +178,6 @@ public class Template {
         } else if (nextEquals('(')) {
             Parsed subExpr = processExpression();
             if (!nextEquals(')')) {throw new ParseException("need closing ')'");}
-            parsed.before=parsed.before+subExpr.before;
             parsed.java='('+subExpr.java+')';
             parsed.type=subExpr.type;
         } else if (nextEquals('$')) {
@@ -203,7 +202,6 @@ public class Template {
         final StringBuilder exprBuilder = new StringBuilder();
         // TODO determine if multiple terms before casting
         for (Parsed term : terms) {
-            exprBuilder.append(term.before);
             if (expr.type != Type.NoType && term.type == Type.BindType) {
                 if (expr.type == Type.LongType) {
                     exprBuilder.append("((Number)("+term.java+")).longValue()");

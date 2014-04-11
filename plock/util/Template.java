@@ -4,6 +4,7 @@ import java.util.*;
 import java.lang.Character.*;
 import java.nio.file.*;
 import java.lang.reflect.*;
+import java.util.stream.*;
 
 // TODO: on demand create the render instance, store the compiled string source code
 // TODO: test unicode and octal escaping
@@ -17,6 +18,7 @@ import java.lang.reflect.*;
 
 // if an expression does not complete and end of template, just print out the remainder
 
+// if doing binary expressions with just bindings, then to get floating point, you must add +0.0f as a hint
 /** Text templates as input generate Java source when is then executed to build a string
  * @author Chris Plock - plockc@gmail.com
  */
@@ -26,6 +28,7 @@ public class Template {
     private static final boolean[] charsInNumbers = buildMatchingArray("0123456789.");
     private static final boolean[] numberOperators = buildMatchingArray("+-%*/");
     private static final boolean[] booleanOperators = buildMatchingArray("><=&|!");
+    private static final boolean[] whitespace = buildMatchingArray(" \t\n\r");
     private int pos = 0; // the current position
     private int exprStart = 0; // the start of the current expression
     private StringBuilder java = new StringBuilder(); // this is the generated Java source class
@@ -79,7 +82,7 @@ public class Template {
                     // we are processing a bound variable or a numeric expression
                     consumeChar().append("\");\n");
                     append("  try {out.append(");
-                    append(processInlineVariable()).append(");}\n");
+                    append(processInlineVariable().java).append(");}\n");
                     String templateExpression = new String(tpl,curPos,pos-curPos);
                     append("  catch (Template.BadReferenceException e) {\n");
                     append("    System.out.println(\"failed reference: \"+e); e.printStackTrace();\n");
@@ -126,10 +129,14 @@ public class Template {
     public static class BadReferenceException extends RuntimeException {
         BadReferenceException(String message) {super(message);}
     }
-    private enum Type { StringType, BooleanType, NumberType, NoType, BindType};
-    private static class Parsed {String before="", java; Type type=NoType;}
+    private enum Type {
+        StringType, BooleanType, LongType, DoubleType, NoType, BindType;
+        public String toString() { return name().replaceAll("Type", ""); }
+    }
+    private static class Parsed {String before="", java; Type type=Type.NoType;}
     private char nextChar() {if (pos >= tpl.length) {throw new EOFException();} return tpl[pos++];}
     private Template consumeChar() {pos++; return this;}
+    private Template consume(boolean[] charsToEat) {while (charsToEat[tpl[pos]]) pos++; return this;}
     private boolean nextEquals(char c) {if (pos >= tpl.length) return false; return tpl[pos]==c;}
     private boolean nextEquals(String s) {
         if (pos+s.length() > tpl.length) return false;
@@ -145,27 +152,29 @@ public class Template {
         while (pos < tpl.length && !scanner.scan(tpl[pos])) pos++;
         return new String(tpl, start, pos-start);
     }
-    private String scanUntilNoMatch(boolean[] matches) {scan((c) -> !matches[c];}
+    private String scanUntilNoMatch(boolean[] matches) {return scan((c) -> !matches[c]);}
     private String scanUntil(String chars) {
        boolean[] matches = buildMatchingArray(chars); 
        return scan((c) -> matches[c]);
     }
     private Parsed processTerm() {
+        consume(whitespace);
         if (nextMatches(numberOperators)) {
-            return new Parsed() {{java=scanUntilNoMatch(numberOperators); type=NumberType;}};
+            return new Parsed() {{java=scanUntilNoMatch(numberOperators); type=Type.LongType;}};
         }
         if (nextMatches(booleanOperators)) {
-            return new Parsed() {{java=scanUntilNoMatch(booleanOperators); type=BooleanType;}};
+            return new Parsed() {{java=scanUntilNoMatch(booleanOperators);}};
         }
         if (nextMatches(charsInNumbers)) {
-            return new Parsed() {{java=scanUntilNoMatch(charsInNumbers); type=NumberType;}};
+            String number = scanUntilNoMatch(charsInNumbers);
+            return new Parsed() {{java=number; type=number.contains(".") ? Type.DoubleType: Type.LongType;}};
         }
-        Parsed parsed;
+        Parsed parsed = new Parsed();
         if (nextEquals('"') ) {
             // TODO somewhat broken
             // TODO process string much like a template
-            parsed.type = StringType;
-            parsed.java=scanUntil('"');
+            parsed.type = Type.StringType;
+            parsed.java=scanUntil("\"");
         } else if (nextEquals('(')) {
             Parsed subExpr = processExpression();
             if (!nextEquals(')')) {throw new ParseException("need closing ')'");}
@@ -173,8 +182,8 @@ public class Template {
             parsed.java='('+subExpr.java+')';
             parsed.type=subExpr.type;
         } else if (nextEquals('$')) {
-            parsed = processInlineVariable();
-        }
+            parsed = consumeChar().processInlineVariable();
+        }  
         return parsed;
     }
     private Parsed processExpression() {
@@ -182,21 +191,33 @@ public class Template {
         while (!nextEquals('}') && !nextEquals(')') && !nextEquals(',')) {
             terms.add(processTerm());
         }
-        Type exprType = NoType;
+        Parsed expr = new Parsed();
         for (Parsed parsed : terms) {
             Type termType = parsed.type;
             // Boolean, Number, and Binding can all convert to string concatenation
-            if (termType == StringType) {exprType = StringType; break;}
-            if (termType == BooleanType) {exprType= BooleanType;}
-            if (termType == NumberType) {exprType = NumberType;}
+            if (termType == Type.StringType) {expr.type = Type.StringType; break;}
+            if (termType == Type.BooleanType) {expr.type= Type.BooleanType;}
+            if (termType == Type.LongType && expr.type!=Type.DoubleType) {expr.type = Type.LongType;}
+            if (termType == Type.DoubleType) {expr.type = Type.DoubleType;}
         }
-        StringBuilder expr = new StringBuilder();
+        final StringBuilder exprBuilder = new StringBuilder();
+        // TODO determine if multiple terms before casting
         for (Parsed term : terms) {
-            expr.append(term.before);
-            if (term.type != exprType) {expr.append('('+term.type+')');}
-            expr.append(term.java);
+            exprBuilder.append(term.before);
+            if (expr.type != Type.NoType && term.type == Type.BindType) {
+                if (expr.type == Type.LongType) {
+                    exprBuilder.append("((Number)("+term.java+")).longValue()");
+                } else if (expr.type == Type.DoubleType) {
+                    exprBuilder.append("((Number)("+term.java+")).doubleValue()");
+                } else {
+                    exprBuilder.append('('+expr.type.toString()+')').append(term.java);
+                }
+            } else {
+                exprBuilder.append(term.java);
+            }
         }
-        return new Parsed() {{java=expr.toString(); type=exprType;}}
+        expr.java=exprBuilder.toString();
+        return expr;
     }
     // TODO: this can probably actually be run by processMethod
     /** @return false if null deref and should just print the template expr */
@@ -206,13 +227,13 @@ public class Template {
         String varName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
         // might need to force $ escapes for when this lone '$' shows in nested / complex expressions
         // or throw exception to just print out the expression and produce a warning
-        if (varName.length() == 0) {return "$";}
-        String codeToEvalToObject = "arg0.get(\""+varName+"\")";
+        if (varName.length() == 0) {return new Parsed() {{java="$";}};}
+        Parsed codeToEvalToObject = new Parsed() {{java="arg0.get(\""+varName+"\")"; type=Type.BindType;}};
         while (nextEquals('.')) {
-            codeToEvalToObject = consumeChar().processMethod(codeToEvalToObject);
+            codeToEvalToObject = consumeChar().processMethod(codeToEvalToObject.java);
         }
         return codeToEvalToObject;
-        // check for '$' for recursion variable
+        // TODO: check for '$' for recursion variable
     }
 
     private Parsed processMethod(String codeToEvalToObject) {
@@ -233,11 +254,11 @@ public class Template {
     private String processArgs() {
         Parsed parsed = processExpression();
         if (nextEquals(')')) {return parsed.java;}
-        if (nextEquals(',')) { consumeChar(); return arg+","+processArgs(); }
+        if (nextEquals(',')) { consumeChar(); return parsed.java+","+processArgs(); }
         // the processArgs call will finish the current argument before moving on to the next (or close paren)
         if (nextEquals('$')) { 
             consumeChar();
-            return arg+processExpression()+processArgs();
+            return parsed.java+processExpression()+processArgs();
         }
         return "not implemented yet";
     }
@@ -246,13 +267,26 @@ public class Template {
      *  not do a good job of weighting multiple argument options */
     public static Object invoke(String methodName, Object obj, Object[] args) throws BadReferenceException {
         if (obj == null) {throw new BadReferenceException("attempted to call "+methodName+" on a null object");}
-        for(Method method : obj.getClass().getMethods()) {
-            Class[] paramClasses = method.getParameterTypes();
-            if (paramClasses.length != args.length) continue;
-            if (!method.getName().equals(methodName)) continue;
-            for (int i=0; i<paramClasses.length; i++) {
-                if (!paramClasses[i].isAssignableFrom(args[i].getClass())) continue;
-            }
+        Method method = Arrays.stream(obj.getClass().getMethods())
+            .filter(m->m.getParameterTypes().length == args.length && m.getName().equals(methodName))
+            .filter(m->{
+                Class[] paramClasses = m.getParameterTypes();
+                for (int i=0; i<paramClasses.length; i++) {
+                    if (Integer.TYPE.equals(paramClasses[i])) {
+                        // TODO: smarter casting across primitives
+                        args[i] = ((Number)args[i]).intValue();
+                    } else if (Number.class.isAssignableFrom(paramClasses[i])) {
+                       if (!Number.class.isAssignableFrom(args[i].getClass())) {
+                           return false;
+                       }
+                    } else if (!paramClasses[i].isAssignableFrom(args[i].getClass())) {
+                        return false;
+                    }
+                }
+                return true;
+            })
+            .findFirst().orElse(null);
+        if (method != null) {
             try {
                 return method.invoke(obj, args); 
             } catch (IllegalAccessException e) {System.out.println(methodName+" not accessible");
@@ -260,9 +294,9 @@ public class Template {
                 System.out.println("failed to invoke "+methodName); e.printStackTrace();
             }
         }
-
-        // TODO: provide types of parameters
-        throw new BadReferenceException("no "+obj.getClass().getSimpleName()+"."+methodName+"() matching arguments");
+        // TODO: provide types of parameters for debugging
+        String params = Arrays.stream(args).map(a->a.getClass().getSimpleName()).collect(Collectors.joining(", "));
+        throw new BadReferenceException("no "+obj.getClass().getSimpleName()+"."+methodName+"() matching ("+params+")");
     }
     public String render() {return renderer.render(bindings);}
     public String render(Map<String,Object> bindings) {
@@ -284,17 +318,24 @@ public class Template {
                 put("three", 3);
             }};
             class Test {public void validate(String template, String result) throws Exception {
+                Template t = null;
                 try {
-                    Template t = new Template(template.toCharArray());
-                    String output = t.render(bindings);
-                    if (!output.equals(result)) {
-                        throw new RuntimeException(template+"\n-------\n"+t.java+"\n======\nexpected: "+result+"\nGot: "+output);
-                    }
-                    System.out.println(template+"  -->  "+output);
+                    t = new Template(template.toCharArray());
                 } catch (ParseException e) {
                     throw new RuntimeException(template,e);
                 }
+                try {
+                    String output = t.render(bindings);
+                    if (!output.equals(result)) {
+                        throw new RuntimeException("expected: "+result+"\nGot: "+output);
+                    }
+                    System.out.println(template+"  -->  "+output);
+                } catch (Exception e) {
+                    throw new RuntimeException(template+"\n-----\n"+t.java+"\n-----\n"+e.getMessage(), e);
+                }
             }}
+            /*
+             */
             new Test().validate("Hello $greeting", "Hello $greeting");
             new Test().validate("Hello {$greeting}", "Hello world");
             new Test().validate("Hello {$greeting} !", "Hello world !");
@@ -310,7 +351,7 @@ public class Template {
             new Test().validate("Hello {$greeting.substring($three-2)}", "Hello orld");
             new Test().validate("Hello {$greeting.substring($three-$two)}", "Hello orld");
             new Test().validate("Hello {$greeting.substring($three-$two+$one)}", "Hello rld");
-            new Test().validate("Hello {$greeting.substring(1, $three-$two+$one)}", "Hello or");
+            new Test().validate("Hello {$greeting.substring(1, $three-$two+$one)}", "Hello o");
             new Test().validate("Hello {$one+$two}", "Hello 3");
             new Test().validate("Hello {$one+2}", "Hello 3");
         }

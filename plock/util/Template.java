@@ -293,7 +293,7 @@ public class Template {
         throw new BadReferenceException("no "+obj.getClass().getSimpleName()+"."+methodName+"() matching ("+params+")");
     }
     public String render(Map<String,Object> bindings) throws Exception {
-        Renderer renderer = CompileSourceInMemory.<Renderer>createSimpleInstance(Renderer.class, java.toString());
+        Renderer renderer = CompileSourceInMemory.<Renderer>createSimpleInstance(Renderer.class, javaSource);
         if (renderer == null) {
             throw new RuntimeException("failed to compile template: \n------"+new String(tpl)+"\n-----\n"+java);
         }

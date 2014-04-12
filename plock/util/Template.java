@@ -29,9 +29,12 @@ public class Template {
     private static final boolean[] numberOperators = buildMatchingArray("+-%*/");
     private static final boolean[] booleanOperators = buildMatchingArray("><=&|!");
     private static final boolean[] whitespace = buildMatchingArray(" \t\n\r");
+    /** code generated from the template will implement this interface and be executed */
+    public interface Renderer { public String render(Map<String,Object> bindings); } 
     private int pos = 0; // the current position
     private int exprStart = 0; // the start of the current expression
     private StringBuilder java = new StringBuilder(); // this is the generated Java source class
+    private final String javaSource;
     private char[] tpl;
    
     static {
@@ -49,14 +52,9 @@ public class Template {
         }
         return matchingArray;
     }
-    /** code generated from the template will implement this interface and be executed */
-    public interface Renderer { public String render(Map<String,Object> bindings); } 
 
-    private Map<String,Object> bindings = new TreeMap<String,Object>();
-    private final Renderer renderer;
-    
     public Template(final char[] source) throws Exception {
-	this.tpl = source;
+        this.tpl = source;
         java.append("  StringBuilder out = new StringBuilder();\n  out.append(\n       \"");
         // Here we are processing the textual / non-code part of the template
         // generally copying stuff over, but paying attention to Template escaped characters, java escapes, 
@@ -113,10 +111,8 @@ public class Template {
             }
         }
         java.append("\");\n  return out.toString();");
-        renderer = CompileSourceInMemory.<Renderer>createSimpleInstance(Renderer.class, java.toString());
-        if (renderer == null) {
-            throw new RuntimeException("failed to compile template: \n------"+new String(tpl)+"\n-----\n"+java);
-        }
+        javaSource=java.toString();
+        java=null;
     }
 
     private static class ParseException extends RuntimeException {
@@ -296,17 +292,19 @@ public class Template {
         String params = Arrays.stream(args).map(a->a.getClass().getSimpleName()).collect(Collectors.joining(", "));
         throw new BadReferenceException("no "+obj.getClass().getSimpleName()+"."+methodName+"() matching ("+params+")");
     }
-    public String render() {return renderer.render(bindings);}
-    public String render(Map<String,Object> bindings) {
-        this.bindings.putAll(bindings);
-        return renderer.render(this.bindings);
+    public String render(Map<String,Object> bindings) throws Exception {
+        Renderer renderer = CompileSourceInMemory.<Renderer>createSimpleInstance(Renderer.class, java.toString());
+        if (renderer == null) {
+            throw new RuntimeException("failed to compile template: \n------"+new String(tpl)+"\n-----\n"+java);
+        }
+        return renderer.render(bindings);
     }
 
     /** read the file from first argument given and spit it out to console */
     public static void main(String[] args) throws Exception {
         if (args.length == 1) {
             Template t= new Template(new String(Files.readAllBytes(Paths.get(args[0])),"UTF-8").toCharArray());
-            System.out.println(t.render());
+            System.out.println(t.render(Collections.emptyMap()));
         } else {
             final Map<String,Object> bindings = new HashMap<String,Object>() {{
                 put("greeting", "world");

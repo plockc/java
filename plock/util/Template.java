@@ -25,6 +25,7 @@ import java.util.stream.*;
 public class Template {
     /** for ascii character values (less than 256), any non-null entries provide the proper ascii escape */
     private static final Character[] BASIC_ESCAPES = new Character[256];
+    private static final Character[] BASIC_ESCAPE_CHARS = new Character[256];
     private static final boolean[] charsInNumbers = buildMatchingArray("0123456789.");
     private static final boolean[] numberOperators = buildMatchingArray("+-%*/");
     private static final boolean[] booleanOperators = buildMatchingArray("><=&|!");
@@ -36,13 +37,23 @@ public class Template {
     private StringBuilder java = new StringBuilder(); // this is the generated Java source class
     private final String javaSource;
     private char[] tpl;
-   
+    private static final Set<String> defaultStaticImports = new HashSet<String>(Arrays.asList(
+                "java.lang.Math.*","java.util.Arrays.*", "java.util.Collections.*"));
+    private static final Set<String> defaultImports = new HashSet<String>(Arrays.asList(
+                "java.lang.Math", "java.lang.*", "java.util.*", "java.util.regex.*", "java.time.*"));
+    private Set<String> imports = new HashSet<String>(defaultImports);
+    private Set<String> staticImports = new HashSet<String>(defaultStaticImports);
+
     static {
         // initialize the escapes with pairs, the first in the pair is the actual character, the second, the
         // printable character that should come after the backslash
         char[] basicEscapes = new char[] {'\b','b','\t','t','\n','n','\f','f','\r','r','"','"'};
         for (int i=0; i<basicEscapes.length; i+=2) {
             BASIC_ESCAPES[basicEscapes[i]] = basicEscapes[i+1];
+        }
+        char[] charsNeedingEscaping = new char[] {'\t', 't', '\n', 'n', '\r', 'r', '"', '"'};
+        for (int i=0; i<charsNeedingEscaping.length; i+=2) {
+            BASIC_ESCAPE_CHARS[charsNeedingEscaping[i]] = charsNeedingEscaping[i+1];
         }
     }
     private static boolean[] buildMatchingArray(String matchChars) {
@@ -62,7 +73,7 @@ public class Template {
         while(pos<tpl.length) {
             char c = tpl[pos];
             if (c=='\\') {
-                if (pos+1==tpl.length) {throw new IllegalArgumentException("cannot end on an unescaped backslash");}
+                if (pos+1==tpl.length) {throw new ParseException("cannot end on an unescaped backslash");}
                 // a slash can escape a '{' or a '$' which are special characters in this template, but not for Java
                 if (tpl[pos+1] =='{' || tpl[pos+1] =='$') {
                     // we have a Template escaped character, so just add the escaped character all by itself
@@ -81,7 +92,10 @@ public class Template {
                     append("\");\n");
                     append("  try {out.append(");
                     append(processExpression().java).append(");}\n");
-                    String templateExpression = new String(tpl,curPos,pos-curPos);
+                    StringBuilder templateExpression = new StringBuilder();
+                    for (char ch=tpl[curPos++]; curPos<pos; ch=tpl[curPos++]) {
+                        templateExpression.append(BASIC_ESCAPE_CHARS[ch]!=null ? "\\"+BASIC_ESCAPE_CHARS[ch] : ch);
+                    }
                     append("  catch (Template.BadReferenceException e) {\n");
                     append("    System.out.println(\"failed reference: \"+e); e.printStackTrace();\n");
                     append("    out.append(\""+templateExpression+"\");");
@@ -114,6 +128,13 @@ public class Template {
         javaSource=java.toString();
         java=null;
     }
+
+    public Set<String> getStaticImports() {return new HashSet<String>(imports);}
+    public Template setStaticImports(Collection<String> imports) {
+        this.staticImports = new HashSet<String>(imports); return this;
+    }
+    public Set<String> getImports() {return new HashSet<String>(imports);}
+    public Template setImports(Collection<String> imports) {this.imports=new HashSet<String>(imports); return this;}
 
     private static class ParseException extends RuntimeException {
         ParseException(String message) {super(message);}
@@ -153,7 +174,13 @@ public class Template {
        boolean[] matches = buildMatchingArray(chars); 
        return scan((c) -> matches[c]);
     }
-    private Parsed processTerm() {
+    private String scanBindingName() {
+        String binding = scan((nextChar) -> !Character.isLetter(nextChar))
+            +  scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
+        if (binding.length() == 0) {throw new ParseException("no deference name found");}
+        return binding;
+    }
+     private Parsed processTerm() {
         consume(whitespace);
         if (nextMatches(numberOperators)) {
             return new Parsed() {{java=scanUntilNoMatch(numberOperators); type=Type.LongType;}};
@@ -170,7 +197,8 @@ public class Template {
             // TODO somewhat broken
             // TODO process string much like a template
             parsed.type = Type.StringType;
-            parsed.java=scanUntil("\"");
+            parsed.java='"'+consumeChar().scanUntil("\"")+'"';
+            consumeChar();
         } else if (nextEquals('(')) {
             Parsed subExpr = processExpression();
             if (!nextEquals(')')) {throw new ParseException("need closing ')'");}
@@ -214,28 +242,75 @@ public class Template {
         return expr;
     }
     // TODO: this can probably actually be run by processMethod
+    // TODO: this should be renamed to process binding
     /** @return false if null deref and should just print the template expr */
     private Parsed processInlineVariable() {
-        // really need to get varName in one shot
-        String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
-        String varName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
-        // might need to force $ escapes for when this lone '$' shows in nested / complex expressions
-        // or throw exception to just print out the expression and produce a warning
-        if (varName.length() == 0) {return new Parsed() {{java="$";}};}
-        Parsed codeToEvalToObject = new Parsed() {{java="arg0.get(\""+varName+"\")"; type=Type.BindType;}};
+        String varName = scanBindingName();
+        // TODO: add method calling capability
+        // check for method call either included or static
+        // how can i tell a static included method's type?
+        // how do i find the class for a static method call that was imported?
+        // will need explicit configuration of the package and static includes (with a default set), then search
+        // should be able to get fully qualified class and the return type!
+        // -- what about a method call for the rest of the class, do we allow this?  would need a set of methods
+        //    to be programmatically set up with (name, modifiers, code) so we can identify and get type information
+        //    or just let it pass through and fail compilation!! i like that better
+        // -- we probably can just let compilation fail for static import methods and static methods!
+        // ** remember we need type information, the defined package includes also provide authorization
+        Parsed codeToEvalToObject = null;
+        if (nextEquals('(')) { // TODO: search for method in static includes and try local functionsi
+        } else if (nextEquals("::")) {
+            consumeChar().consumeChar();
+            codeToEvalToObject = processStaticMethod(varName);
+       } else {
+            final String invocation = "arg0.get(\""+varName+"\")";
+            codeToEvalToObject = new Parsed() {{java=invocation; type=Type.BindType;}};
+        }
         while (nextEquals('.')) {
             codeToEvalToObject = consumeChar().processMethod(codeToEvalToObject.java);
         }
+        if (nextEquals("::")) {throw new ParseException("static methods can only be called on imports");}
         return codeToEvalToObject;
         // TODO: check for '$' for recursion variable
     }
 
+    private Parsed processStaticMethod(String varName) {
+        final String methodName = scanBindingName();
+        if (!nextEquals('(')) {throw new ParseException("don't yet support static member variables");}
+        consumeChar();
+        for (String packageName : imports) {
+            String packagePath = packageName.replaceAll("\\.","/");
+            if (packagePath.endsWith("*")) {
+                packagePath = packagePath.replaceAll("\\*","");
+                continue;
+            } else {
+                if (!packageName.endsWith('.'+varName)) {
+                    continue;
+                }
+                varName = packageName;
+                break;
+            }
+        }
+        try {
+            Class clazz = Class.forName(varName);
+            if (clazz == null) {throw new ParseException("did not find class "+varName);}
+            Method method = Arrays.stream(clazz.getMethods()).filter(m->m.getName().equals(methodName))
+                .findFirst().orElse(null);
+            if (method == null) {throw new ParseException("no method in "+varName+" called "+methodName);}
+            // TODO: check return type and set properly
+            String args = "new Object[] {"+processArgs()+"}";
+            final String invocation = "Template.invoke(\""+methodName+"\", "+varName+".class, null, "+args+")";
+            if (!nextEquals(')')) {throw new ParseException("missing closing ')'");}
+            consumeChar();
+            return new Parsed() {{ java = invocation; type=Type.BindType; }};
+        } catch (ClassNotFoundException e) {throw new ParseException("class "+varName+" not found");}
+     }
     private Parsed processMethod(String codeToEvalToObject) {
-        String firstPart = scan((nextChar) -> !Character.isLetter(nextChar));
-        String methodName = firstPart + scan((nextC) -> nextC=='$' || !Character.isJavaIdentifierPart(nextC));
-        if (methodName.length() == 0) {throw new ParseException("no deference name found");}
+        String methodName = scanBindingName();
         if (nextEquals('.')) {
             // TODO: do other type of fancy derefs like var name, .get("key")
+            //       but be wary of package calls like java.lang.String::format(..) which would conflict
+            //       and not supported because could call arbitrary code
         } else if (nextEquals('(')) {
             consumeChar();
             String call="Template.invoke(\""+methodName+"\", "+codeToEvalToObject+", new Object[] {"+processArgs()+"})";
@@ -261,7 +336,10 @@ public class Template {
      *  not do a good job of weighting multiple argument options */
     public static Object invoke(String methodName, Object obj, Object[] args) throws BadReferenceException {
         if (obj == null) {throw new BadReferenceException("attempted to call "+methodName+" on a null object");}
-        Method method = Arrays.stream(obj.getClass().getMethods())
+        return invoke(methodName, obj.getClass(), obj, args);
+    }
+    public static Object invoke(String methodName, Class clazz, Object obj, Object[] args) throws BadReferenceException {
+        Method method = Arrays.stream(clazz.getMethods())
             .filter(m->m.getParameterTypes().length == args.length && m.getName().equals(methodName))
             .filter(m->{
                 Class[] paramClasses = m.getParameterTypes();
@@ -288,9 +366,8 @@ public class Template {
                 System.out.println("failed to invoke "+methodName); e.printStackTrace();
             }
         }
-        // TODO: provide types of parameters for debugging
         String params = Arrays.stream(args).map(a->a.getClass().getSimpleName()).collect(Collectors.joining(", "));
-        throw new BadReferenceException("no "+obj.getClass().getSimpleName()+"."+methodName+"() matching ("+params+")");
+        throw new BadReferenceException("no "+clazz.getSimpleName()+"."+methodName+"() matching ("+params+")");
     }
     public String render(Map<String,Object> bindings) throws Exception {
         Renderer renderer = CompileSourceInMemory.<Renderer>createSimpleInstance(Renderer.class, javaSource);
@@ -330,8 +407,7 @@ public class Template {
                     throw new RuntimeException(template+"\n-----\n"+t.java+"\n-----\n"+e.getMessage(), e);
                 }
             }}
-            /*
-             */
+            new Test().validate("Hello {$Math::min(5,3)}", "Hello 3");
             new Test().validate("Hello $greeting", "Hello $greeting");
             new Test().validate("Hello {$greeting}", "Hello world");
             new Test().validate("Hello {$greeting} !", "Hello world !");

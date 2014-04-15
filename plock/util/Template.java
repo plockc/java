@@ -40,7 +40,7 @@ public class Template {
     private static final Set<String> defaultStaticImports = new HashSet<String>(Arrays.asList(
                 "java.lang.Math.*","java.util.Arrays.*", "java.util.Collections.*"));
     private static final Set<String> defaultImports = new HashSet<String>(Arrays.asList(
-                "java.lang.Math", "java.lang.*", "java.util.*", "java.util.regex.*", "java.time.*"));
+                "java.lang.*", "java.util.*", "java.util.regex.*", "java.time.*"));
     private Set<String> imports = new HashSet<String>(defaultImports);
     private Set<String> staticImports = new HashSet<String>(defaultStaticImports);
 
@@ -281,7 +281,11 @@ public class Template {
         for (String packageName : imports) {
             String packagePath = packageName.replaceAll("\\.","/");
             if (packagePath.endsWith("*")) {
-                packagePath = packagePath.replaceAll("\\*","");
+                packagePath = '/'+packagePath.replaceAll("\\*","");
+                if (getClass().getResourceAsStream(packagePath+varName+".class") != null) {
+                    varName = packageName.substring(0,packageName.length()-1)+varName;
+                    break;
+                }
                 continue;
             } else {
                 if (!packageName.endsWith('.'+varName)) {
@@ -407,6 +411,7 @@ public class Template {
                     throw new RuntimeException(template+"\n-----\n"+t.java+"\n-----\n"+e.getMessage(), e);
                 }
             }}
+            new Test().validate("Hello {$Math::min($two,$one)}", "Hello 1");
             new Test().validate("Hello {$Math::min(5,3)}", "Hello 3");
             new Test().validate("Hello $greeting", "Hello $greeting");
             new Test().validate("Hello {$greeting}", "Hello world");

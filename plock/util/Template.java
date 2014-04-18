@@ -374,7 +374,7 @@ public class Template {
                 String params = Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", "));
                 return new BadReferenceException("no "+clazz.getSimpleName()+"."+methodName+"() matching ("+params+")");
             });
-        System.out.println(Arrays.stream(method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", ")));
+        //System.out.println(Arrays.stream(invocationMeta.method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", ")));
         try {
             return invocationMeta.method.invoke(obj, invocationMeta.mappedArgs); 
         } catch (IllegalAccessException e) {System.out.println(methodName+" not accessible");

@@ -9,14 +9,8 @@ import java.util.stream.*;
 // TODO: on demand create the render instance, store the compiled string source code
 // TODO: test unicode and octal escaping
 // TODO: show where errors are
-// TODO: provide binding and handle $
-// TODO: Builder pattern of TemplateInstances with defaults for stuff like imports
 // TODO: dealing with nulls, some template engines just print the string tag preservation), but we may want the null in some cases
 //       or provide a null default at least . . . try to avoid nullpointerexception (I like Chunk rules)
-
-// we set a marker for the entire current variable/expression, in case any part becomes null, I guess a method argument result can be null but an expression can not deref a null.  We need to provide this string representation to the created java source so it can use it in the case of a NullDerefException during evaluation
-
-// if an expression does not complete and end of template, just print out the remainder
 
 // if doing binary expressions with just bindings, then to get floating point, you must add +0.0f as a hint
 /** Text templates as input generate Java source when is then executed to build a string
@@ -43,6 +37,10 @@ public class Template {
                 "java.lang.*", "java.util.*", "java.util.regex.*", "java.time.*"));
     private Set<String> imports = new HashSet<String>(defaultImports);
     private Set<String> staticImports = new HashSet<String>(defaultStaticImports);
+    private static Set<Class> intPrimitiveTypes = new HashSet<Class>(Arrays.asList(Integer.TYPE, Long.TYPE,
+            Short.TYPE, Byte.TYPE, Character.TYPE));
+    private static Set<Class> floatTypes = new HashSet<Class>(Arrays.asList(
+            Float.TYPE, Float.class, Double.TYPE, Double.class));
 
     static {
         // initialize the escapes with pairs, the first in the pair is the actual character, the second, the
@@ -246,16 +244,10 @@ public class Template {
     /** @return false if null deref and should just print the template expr */
     private Parsed processInlineVariable() {
         String varName = scanBindingName();
-        // TODO: add method calling capability
-        // check for method call either included or static
-        // how can i tell a static included method's type?
-        // how do i find the class for a static method call that was imported?
-        // will need explicit configuration of the package and static includes (with a default set), then search
+        // TODO: how can i tell a static included method's type?
         // should be able to get fully qualified class and the return type!
-        // -- what about a method call for the rest of the class, do we allow this?  would need a set of methods
+        // -- what about a instance method call, would need a set of methods
         //    to be programmatically set up with (name, modifiers, code) so we can identify and get type information
-        //    or just let it pass through and fail compilation!! i like that better
-        // -- we probably can just let compilation fail for static import methods and static methods!
         // ** remember we need type information, the defined package includes also provide authorization
         Parsed codeToEvalToObject = null;
         if (nextEquals('(')) { // TODO: search for method in static includes and try local functionsi
@@ -271,7 +263,7 @@ public class Template {
         }
         if (nextEquals("::")) {throw new ParseException("static methods can only be called on imports");}
         return codeToEvalToObject;
-        // TODO: check for '$' for recursion variable
+        // TODO: check for '{$' for recursion variable
     }
 
     private Parsed processStaticMethod(String varName) {
@@ -313,8 +305,6 @@ public class Template {
         String methodName = scanBindingName();
         if (nextEquals('.')) {
             // TODO: do other type of fancy derefs like var name, .get("key")
-            //       but be wary of package calls like java.lang.String::format(..) which would conflict
-            //       and not supported because could call arbitrary code
         } else if (nextEquals('(')) {
             consumeChar();
             String call="Template.invoke(\""+methodName+"\", "+codeToEvalToObject+", new Object[] {"+processArgs()+"})";
@@ -342,36 +332,57 @@ public class Template {
         if (obj == null) {throw new BadReferenceException("attempted to call "+methodName+" on a null object");}
         return invoke(methodName, obj.getClass(), obj, args);
     }
+    // TODO: deal with null as an argument, can map to any non primitize class type
     public static Object invoke(String methodName, Class clazz, Object obj, Object[] args) throws BadReferenceException {
-        Method method = Arrays.stream(clazz.getMethods())
+        Class[] argClasses = Arrays.stream(args).map(a->a.getClass()).toArray(size->new Class[size]);
+        System.out.println("args: "+Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", ")));
+        Optional<Method> method = Optional.empty();
+        // try to grab with exact match on parameters
+        try {method = Optional.of(clazz.getMethod(methodName, argClasses));} catch (NoSuchMethodException ignored) {}
+        class MethodMeta {Method method; int rank=0; Object[] mappedArgs = new Object[args.length];}
+        // if couldn't get an exact method, we have to search through them all
+        MethodMeta invocationMeta = Arrays.stream(clazz.getMethods())
             .filter(m->m.getParameterTypes().length == args.length && m.getName().equals(methodName))
-            .filter(m->{
+            .map(m->{
                 Class[] paramClasses = m.getParameterTypes();
+                MethodMeta methodMeta = new MethodMeta();
                 for (int i=0; i<paramClasses.length; i++) {
-                    if (Integer.TYPE.equals(paramClasses[i])) {
-                        // TODO: smarter casting across primitives
-                        args[i] = ((Number)args[i]).intValue();
+                    methodMeta.mappedArgs[i] = args[i];
+                    Class paramClass = paramClasses[i], argClass = argClasses[i];
+                    // TODO: right now this can break spectacularly with non int args
+                    // TODO: smarter casting across primitives
+                    if (intPrimitiveTypes.contains(paramClass) && floatTypes.contains(argClass)) {
+                        System.out.println("cannot convert "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
+                        return null;
+                    } 
+                    if (intPrimitiveTypes.contains(paramClass)) {
+                        methodMeta.mappedArgs[i] = ((Number)args[i]).intValue();
                     } else if (Number.class.isAssignableFrom(paramClasses[i])) {
-                       if (!Number.class.isAssignableFrom(args[i].getClass())) {
-                           return false;
-                       }
-                    } else if (!paramClasses[i].isAssignableFrom(args[i].getClass())) {
-                        return false;
+                        if (!Number.class.isAssignableFrom(argClasses[i])) {
+                            return null;
+                        }
+                    } else if (!paramClasses[i].isAssignableFrom(argClasses[i])) {
+                        return null;
                     }
                 }
-                return true;
+                methodMeta.method=m; 
+                return methodMeta;
             })
-            .findFirst().orElse(null);
-        if (method != null) {
-            try {
-                return method.invoke(obj, args); 
-            } catch (IllegalAccessException e) {System.out.println(methodName+" not accessible");
-            } catch (InvocationTargetException e) {
-                System.out.println("failed to invoke "+methodName); e.printStackTrace();
-            }
+            .filter(mm-> mm != null)
+            .max(Comparator.comparingInt((MethodMeta rankMeta)->rankMeta.rank))
+            .orElseThrow(() -> {
+                String params = Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", "));
+                return new BadReferenceException("no "+clazz.getSimpleName()+"."+methodName+"() matching ("+params+")");
+            });
+        //System.out.println(Arrays.stream(method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", ")));
+        try {
+            return invocationMeta.method.invoke(obj, invocationMeta.mappedArgs); 
+        } catch (IllegalAccessException e) {System.out.println(methodName+" not accessible");
+        } catch (InvocationTargetException e) {
+            // TODO: better error handling, show the original expression
+            System.out.println("failed to invoke "+methodName); e.printStackTrace();
         }
-        String params = Arrays.stream(args).map(a->a.getClass().getSimpleName()).collect(Collectors.joining(", "));
-        throw new BadReferenceException("no "+clazz.getSimpleName()+"."+methodName+"() matching ("+params+")");
+        return null;
     }
     public String render(Map<String,Object> bindings) throws Exception {
         Renderer renderer = CompileSourceInMemory.<Renderer>createSimpleInstance(Renderer.class, javaSource);
@@ -408,11 +419,11 @@ public class Template {
                     }
                     System.out.println(template+"  -->  "+output);
                 } catch (Exception e) {
-                    throw new RuntimeException(template+"\n-----\n"+t.java+"\n-----\n"+e.getMessage(), e);
+                    throw new RuntimeException(template+"\n-----\n"+t.javaSource+"\n-----\n"+e.getMessage(), e);
                 }
             }}
-            new Test().validate("Hello {$Math::min($two,$one)}", "Hello 1");
-            new Test().validate("Hello {$Math::min(5,3)}", "Hello 3");
+            new Test().validate("Hello {$Math::min(5.1,5.2)}", "Hello 5.1");
+            new Test().validate("Hello {$Math::min(5.2,5.1)}", "Hello 5.1");
             new Test().validate("Hello $greeting", "Hello $greeting");
             new Test().validate("Hello {$greeting}", "Hello world");
             new Test().validate("Hello {$greeting} !", "Hello world !");
@@ -431,6 +442,8 @@ public class Template {
             new Test().validate("Hello {$greeting.substring(1, $three-$two+$one)}", "Hello o");
             new Test().validate("Hello {$one+$two}", "Hello 3");
             new Test().validate("Hello {$one+2}", "Hello 3");
+            new Test().validate("Hello {$Math::min($two,$one)}", "Hello 1");
+            new Test().validate("Hello {$Math::min(5,3)}", "Hello 3");
         }
     }
 }

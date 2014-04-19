@@ -1,6 +1,7 @@
 package plock.util;
 
 import java.util.*;
+import java.util.function.Function;
 import java.lang.Character.*;
 import java.nio.file.*;
 import java.lang.reflect.*;
@@ -39,9 +40,19 @@ public class Template {
     private Set<String> staticImports = new HashSet<String>(defaultStaticImports);
     private static Set<Class> intPrimitiveTypes = new HashSet<Class>(Arrays.asList(Integer.TYPE, Long.TYPE,
             Short.TYPE, Byte.TYPE, Character.TYPE));
+    private static Set<Class> intTypes = Stream.concat(intPrimitiveTypes.stream(), Stream.of(Integer.class,
+                Short.class, Byte.class, Long.class)).collect(Collectors.toSet());
+    private static Set<Class> floatPrimitiveTypes = new HashSet<Class>(Arrays.asList(Float.TYPE, Double.TYPE));
     private static Set<Class> floatTypes = new HashSet<Class>(Arrays.asList(
             Float.TYPE, Float.class, Double.TYPE, Double.class));
-
+    private static Map<Class,Class> primitiveToWrapper = new HashMap<Class,Class>() {{
+        put(Double.TYPE, Double.class); put(Integer.TYPE, Integer.class); put(Long.TYPE, Long.class); put(Short.TYPE, Short.class);
+        put(Float.TYPE, Float.class); put(Character.TYPE, Character.class); put(Short.TYPE, Short.class); put(Byte.TYPE, Byte.class);}};
+    private static final TreeMap<Number,Class> numberRanges = new TreeMap<Number,Class>((one,two)->{
+        double diff = one.doubleValue() - two.doubleValue(); return diff>0 ? 1 : (diff<0 ? -1 : 0);
+    });
+    private interface NumberCast {public Number cast(Number num);}
+    private static final Map<Class,Function<Number,Number>> castingFunctions = new HashMap<Class,Function<Number,Number>>();
     static {
         // initialize the escapes with pairs, the first in the pair is the actual character, the second, the
         // printable character that should come after the backslash
@@ -53,6 +64,18 @@ public class Template {
         for (int i=0; i<charsNeedingEscaping.length; i+=2) {
             BASIC_ESCAPE_CHARS[charsNeedingEscaping[i]] = charsNeedingEscaping[i+1];
         }
+        numberRanges.put(Long.MIN_VALUE, Long.class); numberRanges.put(Long.MAX_VALUE, Long.class);
+        numberRanges.put(Integer.MIN_VALUE, Integer.class); numberRanges.put(Integer.MAX_VALUE, Integer.class);
+        numberRanges.put(Short.MIN_VALUE, Short.class); numberRanges.put(Short.MAX_VALUE, Short.class);
+        numberRanges.put(Byte.MIN_VALUE, Byte.class); numberRanges.put(Byte.MAX_VALUE, Byte.class);
+        numberRanges.put(Double.MIN_VALUE, Double.class); numberRanges.put(Double.MAX_VALUE, Double.class);
+        numberRanges.put(Float.MIN_VALUE, Float.class); numberRanges.put(Float.MAX_VALUE, Float.class);
+        castingFunctions.put(Long.class, n->n.longValue());
+        castingFunctions.put(Integer.class, n->n.intValue());
+        castingFunctions.put(Short.class, n->n.shortValue());
+        castingFunctions.put(Byte.class, n->n.byteValue());
+        castingFunctions.put(Float.class, n->n.floatValue());
+        castingFunctions.put(Double.class, n->n.doubleValue());
     }
     private static boolean[] buildMatchingArray(String matchChars) {
         boolean[] matchingArray = new boolean[256];
@@ -335,7 +358,7 @@ public class Template {
     // TODO: deal with null as an argument, can map to any non primitize class type
     public static Object invoke(String methodName, Class clazz, Object obj, Object[] args) throws BadReferenceException {
         Class[] argClasses = Arrays.stream(args).map(a->a.getClass()).toArray(size->new Class[size]);
-        System.out.println("args: "+Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", ")));
+        System.out.println("original args: "+Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", ")));
         Optional<Method> method = Optional.empty();
         // try to grab with exact match on parameters
         try {method = Optional.of(clazz.getMethod(methodName, argClasses));} catch (NoSuchMethodException ignored) {}
@@ -349,32 +372,55 @@ public class Template {
                 for (int i=0; i<paramClasses.length; i++) {
                     methodMeta.mappedArgs[i] = args[i];
                     Class paramClass = paramClasses[i], argClass = argClasses[i];
-                    // TODO: right now this can break spectacularly with non int args
-                    // TODO: smarter casting across primitives
-                    if (intPrimitiveTypes.contains(paramClass) && floatTypes.contains(argClass)) {
-                        System.out.println("cannot convert "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
-                        return null;
-                    } 
-                    if (intPrimitiveTypes.contains(paramClass)) {
-                        methodMeta.mappedArgs[i] = ((Number)args[i]).intValue();
-                    } else if (Number.class.isAssignableFrom(paramClasses[i])) {
-                        if (!Number.class.isAssignableFrom(argClasses[i])) {
+                    if (paramClass.equals(argClass)) {continue;}
+                    if (Number.class.isAssignableFrom(argClass)) {
+                        if (paramClass.isPrimitive()) {paramClass = primitiveToWrapper.get(paramClass);}
+                        if (intTypes.contains(paramClass) && floatTypes.contains(argClass)) {
+                            System.out.println("cannot convert "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
                             return null;
                         }
-                    } else if (!paramClasses[i].isAssignableFrom(argClasses[i])) {
-                        return null;
+                        // check if arg is float or double, and then if param is int type, if so, OK but add to rank
+                        if (intTypes.contains(argClass) && floatTypes.contains(paramClass)) {
+                            System.out.println("converting non-decimal "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
+                            methodMeta.rank++;
+                            methodMeta.mappedArgs[i] = castingFunctions.get(paramClass).apply((Number)args[i]);
+                        } else {
+                            // TODO: check for narrowing . . .
+                            Number num = (Number)args[i];
+                            if (num.floatValue() > 0.0f) {
+                                SortedMap wideningTypes = numberRanges.subMap(num, true, Double.MAX_VALUE, true);
+                                if (!wideningTypes.containsValue(paramClass)) {
+                                    System.out.println("cannot do narrowing cast from "+args[i]+" to "+paramClass.getSimpleName());
+                                }
+                                methodMeta.mappedArgs[i] = castingFunctions.get(paramClass).apply(num);
+                                System.out.println("cast: "+methodMeta.mappedArgs[i].getClass().getSimpleName());
+                            } else {
+
+                            } 
+                        }
+                    } else {
+                        if (!paramClasses[i].isAssignableFrom(argClasses[i])) {
+                            return null;
+                        }
+                        methodMeta.rank++;
                     }
                 }
                 methodMeta.method=m; 
+                System.out.println("processed "+methodName+"("+
+                        Arrays.stream(methodMeta.method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))
+                        +") with score "+methodMeta.rank);
+
+
                 return methodMeta;
             })
             .filter(mm-> mm != null)
-            .max(Comparator.comparingInt((MethodMeta rankMeta)->rankMeta.rank))
+            .min(Comparator.comparingInt((MethodMeta rankMeta)->rankMeta.rank))
             .orElseThrow(() -> {
                 String params = Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", "));
                 return new BadReferenceException("no "+clazz.getSimpleName()+"."+methodName+"() matching ("+params+")");
             });
-        //System.out.println(Arrays.stream(invocationMeta.method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", ")));
+        System.out.println("final args types: "+Arrays.stream(invocationMeta.mappedArgs).map(a->a.getClass().getSimpleName()).collect(Collectors.joining(", ")));
+        System.out.println("method args types: "+Arrays.stream(invocationMeta.method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", ")));
         try {
             return invocationMeta.method.invoke(obj, invocationMeta.mappedArgs); 
         } catch (IllegalAccessException e) {System.out.println(methodName+" not accessible");

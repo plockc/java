@@ -38,18 +38,18 @@ public class Template {
                 "java.lang.*", "java.util.*", "java.util.regex.*", "java.time.*"));
     private Set<String> imports = new HashSet<String>(defaultImports);
     private Set<String> staticImports = new HashSet<String>(defaultStaticImports);
-    private static Set<Class> intPrimitiveTypes = new HashSet<Class>(Arrays.asList(Integer.TYPE, Long.TYPE,
-            Short.TYPE, Byte.TYPE, Character.TYPE));
-    private static Set<Class> intTypes = Stream.concat(intPrimitiveTypes.stream(), Stream.of(Integer.class,
-                Short.class, Byte.class, Long.class)).collect(Collectors.toSet());
-    private static Set<Class> floatPrimitiveTypes = new HashSet<Class>(Arrays.asList(Float.TYPE, Double.TYPE));
-    private static Set<Class> floatTypes = new HashSet<Class>(Arrays.asList(
-            Float.TYPE, Float.class, Double.TYPE, Double.class));
+    public static Set<Class> intPrimitiveTypes = Collections.unmodifiableSet(new HashSet<Class>(Arrays.asList(Integer.TYPE, Long.TYPE,
+            Short.TYPE, Byte.TYPE, Character.TYPE)));
+    public static Set<Class> intTypes = Collections.unmodifiableSet(Stream.concat(intPrimitiveTypes.stream(), Stream.of(Integer.class,
+                Short.class, Byte.class, Long.class)).collect(Collectors.toSet()));
+    public static Set<Class> floatPrimitiveTypes = Collections.unmodifiableSet(new HashSet<Class>(Arrays.asList(Float.TYPE, Double.TYPE)));
+    public static Set<Class> floatTypes = Collections.unmodifiableSet(new HashSet<Class>(Arrays.asList(
+            Float.TYPE, Float.class, Double.TYPE, Double.class)));
     private static Map<Class,Class> primitiveToWrapper = new HashMap<Class,Class>() {{
         put(Double.TYPE, Double.class); put(Integer.TYPE, Integer.class); put(Long.TYPE, Long.class); put(Short.TYPE, Short.class);
         put(Float.TYPE, Float.class); put(Character.TYPE, Character.class); put(Short.TYPE, Short.class); put(Byte.TYPE, Byte.class);}};
     private static final TreeMap<Number,Class> numberRanges = new TreeMap<Number,Class>((one,two)->{
-        double diff = one.doubleValue() - two.doubleValue(); return diff>0 ? 1 : (diff<0 ? -1 : 0);
+        double d1 = one.doubleValue(), d2=two.doubleValue(); return d1==d2 ? 0 : (d1>d2?1:-1);
     });
     private interface NumberCast {public Number cast(Number num);}
     private static final Map<Class,Function<Number,Number>> castingFunctions = new HashMap<Class,Function<Number,Number>>();
@@ -68,8 +68,8 @@ public class Template {
         numberRanges.put(Integer.MIN_VALUE, Integer.class); numberRanges.put(Integer.MAX_VALUE, Integer.class);
         numberRanges.put(Short.MIN_VALUE, Short.class); numberRanges.put(Short.MAX_VALUE, Short.class);
         numberRanges.put(Byte.MIN_VALUE, Byte.class); numberRanges.put(Byte.MAX_VALUE, Byte.class);
-        numberRanges.put(Double.MIN_VALUE, Double.class); numberRanges.put(Double.MAX_VALUE, Double.class);
-        numberRanges.put(Float.MIN_VALUE, Float.class); numberRanges.put(Float.MAX_VALUE, Float.class);
+        numberRanges.put(-Double.MAX_VALUE, Double.class); numberRanges.put(Double.MAX_VALUE, Double.class);
+        numberRanges.put(-Float.MAX_VALUE, Float.class); numberRanges.put(Float.MAX_VALUE, Float.class);
         castingFunctions.put(Long.class, n->n.longValue());
         castingFunctions.put(Integer.class, n->n.intValue());
         castingFunctions.put(Short.class, n->n.shortValue());
@@ -106,17 +106,20 @@ public class Template {
             } else if (c=='{') {
                 int curPos = pos;
                 nextChar();
-                if (nextEquals("+\"")) {
-                    // TODO: process include
-                } else if (nextEquals('$') || nextEquals('+')) {
-                    // we are processing a bound variable or a numeric expression
+                if (nextOneOf("$+\"-") || Character.isDigit(tpl[pos])) {
                     append("\");\n");
                     append("  try {out.append(");
-                    append(processExpression().java).append(");}\n");
+                    if (nextEquals("+\"")) {
+                        // TODO: process include
+                    } else {
+                        // we are processing a bound variable or a numeric expression
+                        append(processExpression().java);
+                    }
                     StringBuilder templateExpression = new StringBuilder();
                     for (char ch=tpl[curPos++]; curPos<pos; ch=tpl[curPos++]) {
                         templateExpression.append(BASIC_ESCAPE_CHARS[ch]!=null ? "\\"+BASIC_ESCAPE_CHARS[ch] : ch);
                     }
+                    append(");}\n");
                     append("  catch (Template.BadReferenceException e) {\n");
                     append("    System.out.println(\"failed reference: \"+e); e.printStackTrace();\n");
                     append("    out.append(\""+templateExpression+"\");");
@@ -174,12 +177,11 @@ public class Template {
     private static class Parsed {String java; Type type=Type.NoType;}
     private char nextChar() {if (pos >= tpl.length) {throw new EOFException();} return tpl[pos++];}
     private Template consumeChar() {pos++; return this;}
+    private Template consumeChars(int num) {pos+=num; return this;}
     private Template consume(boolean[] charsToEat) {while (charsToEat[tpl[pos]]) pos++; return this;}
     private boolean nextEquals(char c) {if (pos >= tpl.length) return false; return tpl[pos]==c;}
-    private boolean nextEquals(String s) {
-        if (pos+s.length() > tpl.length) return false;
-        return new String(tpl, pos, s.length()).equals(s);
-    }
+    private boolean nextEquals(String s) { return (pos+s.length() <= tpl.length) && new String(tpl, pos, s.length()).equals(s); }
+    private boolean nextOneOf(String validChars) {return validChars.indexOf(tpl[pos]) != -1;}
     private boolean nextMatches(boolean[] matchSet) {return pos<tpl.length && matchSet[tpl[pos]];}
     private Template appendNext() {if (pos < tpl.length) {java.append(nextChar());} return this;}
     private Template append(Object ... stuff) {for (Object s : stuff) {java.append(s);} return this;}
@@ -221,10 +223,12 @@ public class Template {
             parsed.java='"'+consumeChar().scanUntil("\"")+'"';
             consumeChar();
         } else if (nextEquals('(')) {
+            consumeChar();
             Parsed subExpr = processExpression();
             if (!nextEquals(')')) {throw new ParseException("need closing ')'");}
             parsed.java='('+subExpr.java+')';
             parsed.type=subExpr.type;
+            consumeChar();
         } else if (nextEquals('$')) {
             parsed = consumeChar().processInlineVariable();
         }  
@@ -266,20 +270,31 @@ public class Template {
     // TODO: this should be renamed to process binding
     /** @return false if null deref and should just print the template expr */
     private Parsed processInlineVariable() {
+        Parsed codeToEvalToObject = new Parsed(); codeToEvalToObject.type=Type.BindType;
+        if (nextEquals("(i)") || nextEquals("(f)")) {
+            codeToEvalToObject.type = nextEquals("(i)") ? Type.LongType : Type.DoubleType;
+            consumeChars(3);
+        }
         String varName = scanBindingName();
         // TODO: how can i tell a static included method's type?
         // should be able to get fully qualified class and the return type!
         // -- what about a instance method call, would need a set of methods
         //    to be programmatically set up with (name, modifiers, code) so we can identify and get type information
         // ** remember we need type information, the defined package includes also provide authorization
-        Parsed codeToEvalToObject = null;
-        if (nextEquals('(')) { // TODO: search for method in static includes and try local functionsi
+        if (nextEquals('(')) {
+            // TODO: search for method in static includes and try local functions
         } else if (nextEquals("::")) {
             consumeChar().consumeChar();
             codeToEvalToObject = processStaticMethod(varName);
-       } else {
-            final String invocation = "arg0.get(\""+varName+"\")";
-            codeToEvalToObject = new Parsed() {{java=invocation; type=Type.BindType;}};
+        } else {
+            String bound = "arg0.get(\""+varName+"\")";
+            if (codeToEvalToObject.type != Type.BindType) {
+                String className = (codeToEvalToObject.type == Type.LongType ? "Long" : "Double");
+                String java = "((java.util.function.Function<Number,"+className+">)n->"+className+".class.equals(n) ? ("+className+")n : ((Number)n)."+className.toLowerCase()+"Value()).apply((Number)arg0.get(\""+varName+"\"))";
+                codeToEvalToObject.java = java;
+            } else {
+                codeToEvalToObject.java = bound;
+            }
         }
         while (nextEquals('.')) {
             codeToEvalToObject = consumeChar().processMethod(codeToEvalToObject.java);
@@ -358,7 +373,7 @@ public class Template {
     // TODO: deal with null as an argument, can map to any non primitize class type
     public static Object invoke(String methodName, Class clazz, Object obj, Object[] args) throws BadReferenceException {
         Class[] argClasses = Arrays.stream(args).map(a->a.getClass()).toArray(size->new Class[size]);
-        System.out.println("original args: "+Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", ")));
+        System.out.println("invoking with "+methodName+"("+Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", "))+")");
         Optional<Method> method = Optional.empty();
         // try to grab with exact match on parameters
         try {method = Optional.of(clazz.getMethod(methodName, argClasses));} catch (NoSuchMethodException ignored) {}
@@ -367,46 +382,54 @@ public class Template {
         MethodMeta invocationMeta = Arrays.stream(clazz.getMethods())
             .filter(m->m.getParameterTypes().length == args.length && m.getName().equals(methodName))
             .map(m->{
-                Class[] paramClasses = m.getParameterTypes();
                 MethodMeta methodMeta = new MethodMeta();
+                methodMeta.method=m; 
+                Class[] paramClasses = m.getParameterTypes();
+                System.out.println("  testing "+methodName+"("+
+                    Arrays.stream(m.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))+")");
                 for (int i=0; i<paramClasses.length; i++) {
                     methodMeta.mappedArgs[i] = args[i];
                     Class paramClass = paramClasses[i], argClass = argClasses[i];
                     if (paramClass.equals(argClass)) {continue;}
                     if (Number.class.isAssignableFrom(argClass)) {
                         if (paramClass.isPrimitive()) {paramClass = primitiveToWrapper.get(paramClass);}
+                        if (argClass.equals(paramClass)) {continue;} // in case primitive method param was just promoted to wrapper
                         if (intTypes.contains(paramClass) && floatTypes.contains(argClass)) {
-                            System.out.println("cannot convert "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
+                            System.out.println("    cannot convert "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
                             return null;
                         }
                         // check if arg is float or double, and then if param is int type, if so, OK but add to rank
                         if (intTypes.contains(argClass) && floatTypes.contains(paramClass)) {
-                            System.out.println("converting non-decimal "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
-                            methodMeta.rank++;
+                            System.out.println("    converting non-decimal "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
+                            methodMeta.rank+=2;
                             methodMeta.mappedArgs[i] = castingFunctions.get(paramClass).apply((Number)args[i]);
                         } else {
                             // TODO: check for narrowing . . .
                             Number num = (Number)args[i];
-                            if (num.floatValue() > 0.0f) {
-                                SortedMap wideningTypes = numberRanges.subMap(num, true, Double.MAX_VALUE, true);
-                                if (!wideningTypes.containsValue(paramClass)) {
-                                    System.out.println("cannot do narrowing cast from "+args[i]+" to "+paramClass.getSimpleName());
-                                }
-                                methodMeta.mappedArgs[i] = castingFunctions.get(paramClass).apply(num);
-                                System.out.println("cast: "+methodMeta.mappedArgs[i].getClass().getSimpleName());
+                            SortedMap wideningTypes = null;
+                            if (num.floatValue() >= 0.0f) {
+                                System.out.println("    pos "+num);
+                                wideningTypes = numberRanges.subMap(num, true, Double.MAX_VALUE, true);
                             } else {
-
-                            } 
+                                System.out.println("    neg "+num);
+                                wideningTypes = numberRanges.subMap(-Double.MAX_VALUE, true, num, true);
+                            }
+                            if (!wideningTypes.containsValue(paramClass)) {
+                                System.out.println("    cannot do narrowing cast from "+args[i]+" to "+paramClass.getSimpleName());
+                                return null;
+                            }
+                            methodMeta.mappedArgs[i] = castingFunctions.get(paramClass).apply(num);
+                            methodMeta.rank++;
+                            System.out.println("    casting to : "+methodMeta.mappedArgs[i].getClass().getSimpleName());
                         }
                     } else {
                         if (!paramClasses[i].isAssignableFrom(argClasses[i])) {
                             return null;
                         }
-                        methodMeta.rank++;
+                        methodMeta.rank+=2;
                     }
                 }
-                methodMeta.method=m; 
-                System.out.println("processed "+methodName+"("+
+                System.out.println("    processed "+methodName+"("+
                         Arrays.stream(methodMeta.method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))
                         +") with score "+methodMeta.rank);
 
@@ -419,8 +442,9 @@ public class Template {
                 String params = Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", "));
                 return new BadReferenceException("no "+clazz.getSimpleName()+"."+methodName+"() matching ("+params+")");
             });
-        System.out.println("final args types: "+Arrays.stream(invocationMeta.mappedArgs).map(a->a.getClass().getSimpleName()).collect(Collectors.joining(", ")));
-        System.out.println("method args types: "+Arrays.stream(invocationMeta.method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", ")));
+        System.out.print("invoking "+methodName+"("+Arrays.stream(invocationMeta.mappedArgs).map(a->a.getClass().getSimpleName()).collect(Collectors.joining(", "))+") with (");
+        System.out.print(Arrays.stream(invocationMeta.method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))+")");
+        System.out.println(" of "+Arrays.asList(invocationMeta.mappedArgs)+")");
         try {
             return invocationMeta.method.invoke(obj, invocationMeta.mappedArgs); 
         } catch (IllegalAccessException e) {System.out.println(methodName+" not accessible");
@@ -450,6 +474,8 @@ public class Template {
                 put("one", 1);
                 put("two", 2);
                 put("three", 3);
+                put("fivePoint1", 5.1);
+                put("fivePoint2", 5.2);
             }};
             class Test {public void validate(String template, String result) throws Exception {
                 Template t = null;
@@ -468,8 +494,14 @@ public class Template {
                     throw new RuntimeException(template+"\n-----\n"+t.javaSource+"\n-----\n"+e.getMessage(), e);
                 }
             }}
-            new Test().validate("Hello {$Math::min(5.1,5.2)}", "Hello 5.1");
-            new Test().validate("Hello {$Math::min(5.2,5.1)}", "Hello 5.1");
+            new Test().validate("Hello {$two+-1}", "Hello 1");
+            new Test().validate("Hello {$two-(-1)}", "Hello 3");
+            // TODO: this is getting cast to long as part of numeric expression of unknown type, need float hint
+            new Test().validate("Hello {$Math::min(-$(f)fivePoint2,5.1)}", "Hello -5.2");
+            new Test().validate("Hello {5-(-3)}", "Hello 8");
+            new Test().validate("Hello {5+-3}", "Hello 2");
+            // need to validate that this fails to compile
+            // new Test().validate("Hello {5--3}", "Hello {5--3}");
             new Test().validate("Hello $greeting", "Hello $greeting");
             new Test().validate("Hello {$greeting}", "Hello world");
             new Test().validate("Hello {$greeting} !", "Hello world !");
@@ -490,6 +522,14 @@ public class Template {
             new Test().validate("Hello {$one+2}", "Hello 3");
             new Test().validate("Hello {$Math::min($two,$one)}", "Hello 1");
             new Test().validate("Hello {$Math::min(5,3)}", "Hello 3");
+            new Test().validate("Hello {$Math::min(5,5.2)}", "Hello 5.0");
+            new Test().validate("Hello {$Math::min(5.1,5.2)}", "Hello 5.1");
+            new Test().validate("Hello {$Math::min(5.2,5.1)}", "Hello 5.1");
+            new Test().validate("Hello {$Math::min($fivePoint2,$fivePoint1)}", "Hello 5.1");
+            new Test().validate("Hello {$Math::min($fivePoint1,$fivePoint2)}", "Hello 5.1");
+            new Test().validate("Hello {$Math::min(-5.2,5.1)}", "Hello -5.2");
+            new Test().validate("Hello {$Math::min(-5,5.1)}", "Hello -5.0");
+            new Test().validate("Hello {$Math::min($fivePoint2,5.1)}", "Hello 5.1");
         }
     }
 }

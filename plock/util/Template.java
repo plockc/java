@@ -494,14 +494,6 @@ public class Template {
                     throw new RuntimeException(template+"\n-----\n"+t.javaSource+"\n-----\n"+e.getMessage(), e);
                 }
             }}
-            new Test().validate("Hello {$two+-1}", "Hello 1");
-            new Test().validate("Hello {$two-(-1)}", "Hello 3");
-            // TODO: this is getting cast to long as part of numeric expression of unknown type, need float hint
-            new Test().validate("Hello {$Math::min(-$(f)fivePoint2,5.1)}", "Hello -5.2");
-            new Test().validate("Hello {5-(-3)}", "Hello 8");
-            new Test().validate("Hello {5+-3}", "Hello 2");
-            // need to validate that this fails to compile
-            // new Test().validate("Hello {5--3}", "Hello {5--3}");
             new Test().validate("Hello $greeting", "Hello $greeting");
             new Test().validate("Hello {$greeting}", "Hello world");
             new Test().validate("Hello {$greeting} !", "Hello world !");
@@ -518,8 +510,6 @@ public class Template {
             new Test().validate("Hello {$greeting.substring($three-$two)}", "Hello orld");
             new Test().validate("Hello {$greeting.substring($three-$two+$one)}", "Hello rld");
             new Test().validate("Hello {$greeting.substring(1, $three-$two+$one)}", "Hello o");
-            new Test().validate("Hello {$one+$two}", "Hello 3");
-            new Test().validate("Hello {$one+2}", "Hello 3");
             new Test().validate("Hello {$Math::min($two,$one)}", "Hello 1");
             new Test().validate("Hello {$Math::min(5,3)}", "Hello 3");
             new Test().validate("Hello {$Math::min(5,5.2)}", "Hello 5.0");
@@ -530,6 +520,16 @@ public class Template {
             new Test().validate("Hello {$Math::min(-5.2,5.1)}", "Hello -5.2");
             new Test().validate("Hello {$Math::min(-5,5.1)}", "Hello -5.0");
             new Test().validate("Hello {$Math::min($fivePoint2,5.1)}", "Hello 5.1");
+            new Test().validate("Hello {$two+-1}", "Hello 1");
+            new Test().validate("Hello {$one+$two}", "Hello 3");
+            new Test().validate("Hello {$one+2}", "Hello 3");
+            new Test().validate("Hello {$two-(-1)}", "Hello 3");
+            // TODO: this is getting cast to long as part of numeric expression of unknown type, need float hint
+            new Test().validate("Hello {$Math::min(-$(f)fivePoint2,5.1)}", "Hello -5.2");
+            new Test().validate("Hello {5-(-3)}", "Hello 8");
+            new Test().validate("Hello {5+-3}", "Hello 2");
+            // need to validate that this fails to compile, which is the same that java does
+            // new Test().validate("Hello {5--3}", "Hello {5--3}");
         }
     }
 }

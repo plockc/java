@@ -1,3 +1,5 @@
+package plock.math;
+
 // some basics: http://www.investopedia.com/articles/03/101503.asp
 public class Finance {
     // 10000 @ 10% for 10 years = 25,937.42 total (PASS)

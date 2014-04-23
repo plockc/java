@@ -1,6 +1,8 @@
 package alpha;
 
 import java.io.*;
+import java.util.*;
+import java.util.stream.*;
 import javafx.application.Application;
 import javafx.event.*;
 import javafx.scene.control.*;
@@ -34,17 +36,24 @@ public class FinancePlanner extends Application {
         };
         handler = new EventHandler<KeyEvent>() {
             public void handle(KeyEvent event) {
-                output.setText(CompileSourceInMemory.createSimpleImplCode(Runnable.class, sourceCode.getText()));
-                try (ByteArrayOutputStream consoleBytes = new ByteArrayOutputStream();
-                     PrintStream consolePrinter = new PrintStream(consoleBytes, true, "UTF-8")) {
+                ByteArrayOutputStream consoleBytes = new ByteArrayOutputStream();
+                PrintStream oldOut = System.out;
+                PrintStream consolePrinter = null;
+                try {consolePrinter = new PrintStream(consoleBytes, true, "UTF-8");} catch (Exception e) {}
+                try {
                     System.setOut(consolePrinter);
-                    try {CompileSourceInMemory.runJavaFragment(sourceCode.getText());}
-                    catch (IllegalArgumentException ignored) {System.out.println("Failed compilation");}
-                    console.setText(consoleBytes.toString("UTF-8"));
+                    output.setText("");
+                    Template tpl = null;
+                    tpl = new Template().addImports(Arrays.asList("plock.math.Finance")).setSource(sourceCode.getText().toCharArray());
+                    // TODO: template needs to set imports before parsing, maybe split out construction and parsing
+                    output.setText(tpl.getJava());
+                    System.out.println(tpl.render(Collections.emptyMap()));
                 } catch (Exception e) {
-                    StringWriter trace = new StringWriter();
-                    e.printStackTrace(new PrintWriter(trace));
-                    console.setText(trace.toString());
+                    System.out.println(e.getMessage());
+                    e.printStackTrace(consolePrinter);
+                } finally {
+                    System.setOut(oldOut);
+                    try {console.setText(consoleBytes.toString("UTF-8"));} catch (Exception e) {console.setText("missing UTF-8");}
                 }
             }
         }; 

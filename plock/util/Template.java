@@ -7,7 +7,6 @@ import java.nio.file.*;
 import java.lang.reflect.*;
 import java.util.stream.*;
 
-// TODO: on demand create the render instance, store the compiled string source code
 // TODO: test unicode and octal escaping
 // TODO: show where errors are
 // TODO: dealing with nulls, some template engines just print the string tag preservation), but we may want the null in some cases
@@ -30,7 +29,7 @@ public class Template {
     private int pos = 0; // the current position
     private int exprStart = 0; // the start of the current expression
     private StringBuilder java = new StringBuilder(); // this is the generated Java source class
-    private final String javaSource;
+    private String javaSource;
     private char[] tpl;
     private static final Set<String> defaultStaticImports = new HashSet<String>(Arrays.asList(
                 "java.lang.Math.*","java.util.Arrays.*", "java.util.Collections.*"));
@@ -85,7 +84,10 @@ public class Template {
         return matchingArray;
     }
 
-    public Template(final char[] source) throws Exception {
+    public String getJava() {return javaSource;}
+
+    public Template() {}
+    public Template setSource(final char[] source) throws Exception {
         this.tpl = source;
         java.append("  StringBuilder out = new StringBuilder();\n  out.append(\n       \"");
         // Here we are processing the textual / non-code part of the template
@@ -151,6 +153,7 @@ public class Template {
         java.append("\");\n  return out.toString();");
         javaSource=java.toString();
         java=null;
+        return this;
     }
 
     public Set<String> getStaticImports() {return new HashSet<String>(imports);}
@@ -159,9 +162,11 @@ public class Template {
     }
     public Set<String> getImports() {return new HashSet<String>(imports);}
     public Template setImports(Collection<String> imports) {this.imports=new HashSet<String>(imports); return this;}
+    public Template addImports(Collection<String> importsToAdd) {imports.addAll(importsToAdd); return this;}
 
     private static class ParseException extends RuntimeException {
         ParseException(String message) {super(message);}
+        ParseException(String message, Throwable t) {super(message, t);}
     }
     public static class EOFException extends RuntimeException {}
     /** used to tell the java source rendering this template that the expression attempted to use a null value,
@@ -176,6 +181,7 @@ public class Template {
     }
     private static class Parsed {String java; Type type=Type.NoType;}
     private char nextChar() {if (pos >= tpl.length) {throw new EOFException();} return tpl[pos++];}
+    private char currentChar() {return tpl[pos];}
     private Template consumeChar() {pos++; return this;}
     private Template consumeChars(int num) {pos+=num; return this;}
     private Template consume(boolean[] charsToEat) {while (charsToEat[tpl[pos]]) pos++; return this;}
@@ -231,7 +237,9 @@ public class Template {
             consumeChar();
         } else if (nextEquals('$')) {
             parsed = consumeChar().processInlineVariable();
-        }  
+        } else {
+           throw new ParseException("illegal character '"+currentChar()+"'");
+        }
         return parsed;
     }
     private Parsed processExpression() {
@@ -249,7 +257,6 @@ public class Template {
             if (termType == Type.DoubleType) {expr.type = Type.DoubleType;}
         }
         final StringBuilder exprBuilder = new StringBuilder();
-        // TODO determine if multiple terms before casting
         for (Parsed term : terms) {
             if (expr.type != Type.NoType && term.type == Type.BindType) {
                 if (expr.type == Type.LongType) {
@@ -299,7 +306,7 @@ public class Template {
         while (nextEquals('.')) {
             codeToEvalToObject = consumeChar().processMethod(codeToEvalToObject.java);
         }
-        if (nextEquals("::")) {throw new ParseException("static methods can only be called on imports");}
+        if (nextEquals("::")) {throw new ParseException("static methods can only be called on imported classes and not inner classes");}
         return codeToEvalToObject;
         // TODO: check for '{$' for recursion variable
     }
@@ -337,7 +344,7 @@ public class Template {
             if (!nextEquals(')')) {throw new ParseException("missing closing ')'");}
             consumeChar();
             return new Parsed() {{ java = invocation; type=Type.BindType; }};
-        } catch (ClassNotFoundException e) {throw new ParseException("class "+varName+" not found");}
+        } catch (ClassNotFoundException e) {throw new ParseException("class "+varName+" not found: "+e.getMessage(), e);}
      }
     private Parsed processMethod(String codeToEvalToObject) {
         String methodName = scanBindingName();
@@ -351,7 +358,6 @@ public class Template {
         }
         return new Parsed() {{java=methodName;}};
     }
-    // TODO need to track if current expr is numeric, even when rest of arg follows
     private String processArgs() {
         Parsed parsed = processExpression();
         if (nextEquals(')')) {return parsed.java;}
@@ -404,7 +410,6 @@ public class Template {
                             methodMeta.rank+=2;
                             methodMeta.mappedArgs[i] = castingFunctions.get(paramClass).apply((Number)args[i]);
                         } else {
-                            // TODO: check for narrowing . . .
                             Number num = (Number)args[i];
                             SortedMap wideningTypes = null;
                             if (num.floatValue() >= 0.0f) {
@@ -465,7 +470,7 @@ public class Template {
     /** read the file from first argument given and spit it out to console */
     public static void main(String[] args) throws Exception {
         if (args.length == 1) {
-            Template t= new Template(new String(Files.readAllBytes(Paths.get(args[0])),"UTF-8").toCharArray());
+            Template t= new Template().setSource(new String(Files.readAllBytes(Paths.get(args[0])),"UTF-8").toCharArray());
             System.out.println(t.render(Collections.emptyMap()));
         } else {
             final Map<String,Object> bindings = new HashMap<String,Object>() {{
@@ -480,7 +485,7 @@ public class Template {
             class Test {public void validate(String template, String result) throws Exception {
                 Template t = null;
                 try {
-                    t = new Template(template.toCharArray());
+                    t = new Template().setSource(template.toCharArray());
                 } catch (ParseException e) {
                     throw new RuntimeException(template,e);
                 }
@@ -528,6 +533,8 @@ public class Template {
             new Test().validate("Hello {$Math::min(-$(f)fivePoint2,5.1)}", "Hello -5.2");
             new Test().validate("Hello {5-(-3)}", "Hello 8");
             new Test().validate("Hello {5+-3}", "Hello 2");
+            // need to validate parse exception
+            // new Test().validate("Hi {$Math.min(3,2);", "Hi {$Math.min(3,2);");
             // need to validate that this fails to compile, which is the same that java does
             // new Test().validate("Hello {5--3}", "Hello {5--3}");
         }

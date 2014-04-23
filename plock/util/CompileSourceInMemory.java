@@ -96,7 +96,7 @@ public class CompileSourceInMemory {
     CompilationTask task = compiler.getTask(null, fileManager, diagnostics, null, null, sources);
     boolean success = task.call();
     if (success) {
-        ClassLoader transientClassLoader = new ClassLoader() {
+        ClassLoader transientClassLoader = new ClassLoader(CompileSourceInMemory.class.getClassLoader()) {
             public Class<?> findClass(String name) throws ClassNotFoundException {
                 byte[] classBytes = classBytesStream.toByteArray();
                 return defineClass(name, classBytes, 0, classBytes.length); 
@@ -104,7 +104,7 @@ public class CompileSourceInMemory {
         };
         float elapsed = ((System.currentTimeMillis()-start)/1000.0f);
         System.out.println("compiled "+fullClassName+" in "+elapsed+" seconds");
-        return (Class<T>)Class.forName(fullClassName, true, transientClassLoader);
+        return (Class<T>)transientClassLoader.loadClass(fullClassName);
     } else {
         System.out.println(classCode);
         for (Diagnostic<?> diagnostic : diagnostics.getDiagnostics()) {

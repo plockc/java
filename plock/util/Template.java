@@ -110,25 +110,33 @@ public class Template {
                 nextChar();
                 if (nextOneOf("$+\"-") || Character.isDigit(tpl[pos])) {
                     append("\");\n");
-                    append("  try {out.append(");
+                    append("  try {");
                     if (nextEquals("+\"")) {
                         // TODO: process include
                     } else {
                         // we are processing a bound variable or a numeric expression
-                        append(processExpression().java);
+                        Parsed expression = processExpression();
+                        if (expression.assignment) {
+                            append(expression.java).append(";");
+                        } else {
+                            append("out.append(").append(expression.java).append(");");
+                        }
                     }
+                    consume(whitespace);
+                    if (!nextEquals('}')) {throw new ParseException("missing closing '}' from expression:\n"+java);}
+                    consumeChar();
+                    // from the saved position, this creates a java string of the expression we just parsed to use in case there 
+                    //   is a runtime rendering problem
                     StringBuilder templateExpression = new StringBuilder();
                     for (char ch=tpl[curPos++]; curPos<pos; ch=tpl[curPos++]) {
                         templateExpression.append(BASIC_ESCAPE_CHARS[ch]!=null ? "\\"+BASIC_ESCAPE_CHARS[ch] : ch);
                     }
-                    append(");}\n");
+                    append("}\n");
                     append("  catch (Template.BadReferenceException e) {\n");
                     append("    System.out.println(\"failed reference: \"+e); e.printStackTrace();\n");
                     append("    out.append(\""+templateExpression+"\");");
                     append("  }\n");
                     append("  out.append(\n      \"");
-                    if (!nextEquals('}')) {throw new ParseException("missing closing '}' from expression:\n"+java);}
-                    nextChar();
                 }
             } else { 
                 // just a character so add it and track if it needs to be escaped
@@ -179,7 +187,7 @@ public class Template {
         StringType, BooleanType, LongType, DoubleType, NoType, BindType;
         public String toString() { return name().replaceAll("Type", ""); }
     }
-    private static class Parsed {String java; Type type=Type.NoType;}
+    private static class Parsed {String java; Type type=Type.NoType; boolean assignment=false;}
     private char nextChar() {if (pos >= tpl.length) {throw new EOFException();} return tpl[pos++];}
     private char currentChar() {return tpl[pos];}
     private Template consumeChar() {pos++; return this;}
@@ -246,19 +254,24 @@ public class Template {
         List<Parsed> terms = new LinkedList<Parsed>();
         while (!nextEquals('}') && !nextEquals(')') && !nextEquals(',')) {
             terms.add(processTerm());
+            consume(whitespace);
         }
         Parsed expr = new Parsed();
         for (Parsed parsed : terms) {
             Type termType = parsed.type;
+            if (parsed.assignment && terms.size()>1 && !parsed.java.startsWith("(")) {
+                throw new ParseException("must wrap assignment with () in an expression");
+            }
             // Boolean, Number, and Binding can all convert to string concatenation
             if (termType == Type.StringType) {expr.type = Type.StringType; break;}
             if (termType == Type.BooleanType) {expr.type= Type.BooleanType;}
             if (termType == Type.LongType && expr.type!=Type.DoubleType) {expr.type = Type.LongType;}
             if (termType == Type.DoubleType) {expr.type = Type.DoubleType;}
+            if (termType == Type.BindType && expr.type==Type.NoType) {expr.type = Type.BindType;}
         }
         final StringBuilder exprBuilder = new StringBuilder();
         for (Parsed term : terms) {
-            if (expr.type != Type.NoType && term.type == Type.BindType) {
+            if (expr.type != Type.NoType && expr.type != Type.BindType && term.type == Type.BindType) {
                 if (expr.type == Type.LongType) {
                     exprBuilder.append("((Number)("+term.java+")).longValue()");
                 } else if (expr.type == Type.DoubleType) {
@@ -270,6 +283,7 @@ public class Template {
                 exprBuilder.append(term.java);
             }
         }
+        expr.assignment = terms.size() == 1 && terms.get(0).assignment; 
         expr.java=exprBuilder.toString();
         return expr;
     }
@@ -293,6 +307,13 @@ public class Template {
         } else if (nextEquals("::")) {
             consumeChar().consumeChar();
             codeToEvalToObject = processStaticMethod(varName);
+        } else if (nextEquals("=") && !nextEquals("==")) {
+            Parsed parsedValue = consumeChar().processExpression();
+            if (parsedValue.java.length() == 0) {throw new ParseException("invalid assignment value for "+varName);}
+            parsedValue.java="Template.assign(arg0, \""+varName+"\", "+parsedValue.java+")";
+            parsedValue.type=Type.BindType;
+            parsedValue.assignment=true;
+            return parsedValue;
         } else {
             String bound = "arg0.get(\""+varName+"\")";
             if (codeToEvalToObject.type != Type.BindType) {
@@ -354,9 +375,9 @@ public class Template {
             consumeChar();
             String call="Template.invoke(\""+methodName+"\", "+codeToEvalToObject+", new Object[] {"+processArgs()+"})";
             consumeChar();
-            return new Parsed() {{java=call;}};
+            return new Parsed() {{java=call; type=Type.BindType;}};
         }
-        return new Parsed() {{java=methodName;}};
+        return new Parsed() {{java=methodName; type=Type.BindType;}};
     }
     private String processArgs() {
         Parsed parsed = processExpression();
@@ -370,6 +391,10 @@ public class Template {
         return "not implemented yet";
     }
 
+    public static Object assign(Map<String,Object> bindings, String bindingName, Object value) {
+        bindings.put(bindingName, value);
+        return value;
+    }
     /** this is used by templates to find a reasonable method to call, right now it does
      *  not do a good job of weighting multiple argument options */
     public static Object invoke(String methodName, Object obj, Object[] args) throws BadReferenceException {
@@ -379,7 +404,7 @@ public class Template {
     // TODO: deal with null as an argument, can map to any non primitize class type
     public static Object invoke(String methodName, Class clazz, Object obj, Object[] args) throws BadReferenceException {
         Class[] argClasses = Arrays.stream(args).map(a->a.getClass()).toArray(size->new Class[size]);
-        System.out.println("invoking with "+methodName+"("+Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", "))+")");
+        //System.out.println("invoking with "+methodName+"("+Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", "))+")");
         Optional<Method> method = Optional.empty();
         // try to grab with exact match on parameters
         try {method = Optional.of(clazz.getMethod(methodName, argClasses));} catch (NoSuchMethodException ignored) {}
@@ -391,8 +416,8 @@ public class Template {
                 MethodMeta methodMeta = new MethodMeta();
                 methodMeta.method=m; 
                 Class[] paramClasses = m.getParameterTypes();
-                System.out.println("  testing "+methodName+"("+
-                    Arrays.stream(m.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))+")");
+               // System.out.println("  testing "+methodName+"("+
+               //     Arrays.stream(m.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))+")");
                 for (int i=0; i<paramClasses.length; i++) {
                     methodMeta.mappedArgs[i] = args[i];
                     Class paramClass = paramClasses[i], argClass = argClasses[i];
@@ -401,31 +426,31 @@ public class Template {
                         if (paramClass.isPrimitive()) {paramClass = primitiveToWrapper.get(paramClass);}
                         if (argClass.equals(paramClass)) {continue;} // in case primitive method param was just promoted to wrapper
                         if (intTypes.contains(paramClass) && floatTypes.contains(argClass)) {
-                            System.out.println("    cannot convert "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
+                            //System.out.println("    cannot convert "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
                             return null;
                         }
                         // check if arg is float or double, and then if param is int type, if so, OK but add to rank
                         if (intTypes.contains(argClass) && floatTypes.contains(paramClass)) {
-                            System.out.println("    converting non-decimal "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
+                            //System.out.println("    converting non-decimal "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
                             methodMeta.rank+=2;
                             methodMeta.mappedArgs[i] = castingFunctions.get(paramClass).apply((Number)args[i]);
                         } else {
                             Number num = (Number)args[i];
                             SortedMap wideningTypes = null;
                             if (num.floatValue() >= 0.0f) {
-                                System.out.println("    pos "+num);
+                                //System.out.println("    pos "+num);
                                 wideningTypes = numberRanges.subMap(num, true, Double.MAX_VALUE, true);
                             } else {
-                                System.out.println("    neg "+num);
+                                //System.out.println("    neg "+num);
                                 wideningTypes = numberRanges.subMap(-Double.MAX_VALUE, true, num, true);
                             }
                             if (!wideningTypes.containsValue(paramClass)) {
-                                System.out.println("    cannot do narrowing cast from "+args[i]+" to "+paramClass.getSimpleName());
+                                //System.out.println("    cannot do narrowing cast from "+args[i]+" to "+paramClass.getSimpleName());
                                 return null;
                             }
                             methodMeta.mappedArgs[i] = castingFunctions.get(paramClass).apply(num);
                             methodMeta.rank++;
-                            System.out.println("    casting to : "+methodMeta.mappedArgs[i].getClass().getSimpleName());
+                            //System.out.println("    casting to : "+methodMeta.mappedArgs[i].getClass().getSimpleName());
                         }
                     } else {
                         if (!paramClasses[i].isAssignableFrom(argClasses[i])) {
@@ -434,9 +459,9 @@ public class Template {
                         methodMeta.rank+=2;
                     }
                 }
-                System.out.println("    processed "+methodName+"("+
-                        Arrays.stream(methodMeta.method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))
-                        +") with score "+methodMeta.rank);
+                //System.out.println("    processed "+methodName+"("+
+                //        Arrays.stream(methodMeta.method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))
+                //        +") with score "+methodMeta.rank);
 
 
                 return methodMeta;
@@ -447,9 +472,9 @@ public class Template {
                 String params = Arrays.stream(argClasses).map(c->c.getSimpleName()).collect(Collectors.joining(", "));
                 return new BadReferenceException("no "+clazz.getSimpleName()+"."+methodName+"() matching ("+params+")");
             });
-        System.out.print("invoking "+methodName+"("+Arrays.stream(invocationMeta.mappedArgs).map(a->a.getClass().getSimpleName()).collect(Collectors.joining(", "))+") with (");
-        System.out.print(Arrays.stream(invocationMeta.method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))+")");
-        System.out.println(" of "+Arrays.asList(invocationMeta.mappedArgs)+")");
+        //System.out.print("invoking "+methodName+"("+Arrays.stream(invocationMeta.mappedArgs).map(a->a.getClass().getSimpleName()).collect(Collectors.joining(", "))+") with (");
+        //System.out.print(Arrays.stream(invocationMeta.method.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))+")");
+        //System.out.println(" of "+Arrays.asList(invocationMeta.mappedArgs)+")");
         try {
             return invocationMeta.method.invoke(obj, invocationMeta.mappedArgs); 
         } catch (IllegalAccessException e) {System.out.println(methodName+" not accessible");
@@ -464,7 +489,7 @@ public class Template {
         if (renderer == null) {
             throw new RuntimeException("failed to compile template: \n------"+new String(tpl)+"\n-----\n"+java);
         }
-        return renderer.render(bindings);
+        return renderer.render(new HashMap<String,Object>(bindings));
     }
 
     /** read the file from first argument given and spit it out to console */
@@ -537,6 +562,9 @@ public class Template {
             // new Test().validate("Hi {$Math.min(3,2);", "Hi {$Math.min(3,2);");
             // need to validate that this fails to compile, which is the same that java does
             // new Test().validate("Hello {5--3}", "Hello {5--3}");
+            //new Test().validate("Hello {$one+$num=2} {$num} 1", "Hello 3 2 1");
+            new Test().validate("Hello {$msg=\"world\"}{$msg}", "Hello world");
+            new Test().validate("Hello {$one+($num=2)} {$num} 1", "Hello 3 2 1");
         }
     }
 }

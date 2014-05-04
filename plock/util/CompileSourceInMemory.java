@@ -2,7 +2,7 @@ package plock.util;
 
 import java.lang.reflect.*;
 import java.net.URI;
-import java.util.Arrays;
+import java.util.*;
 import java.io.*;
 import java.nio.file.*;
 
@@ -25,6 +25,12 @@ public class CompileSourceInMemory {
         Runnable runnable = createSimpleInstance(Runnable.class, code);
         if (runnable == null) {throw new IllegalArgumentException("failed to compile source");}
         runnable.run();
+  }
+  public static <T> T createInstance(Class<T> interfaceClass, String code) throws Exception {
+        Class<T> clazz = (Class<T>)createClass("Dynamic"+interfaceClass.getSimpleName(), code);
+        if (clazz == null) {return null;}
+        Constructor<?> constructor = clazz.getConstructor(new Class[] {});
+        return (T)constructor.newInstance(new Object[] {});
   }
   public static <T> T createSimpleInstance(Class<T> interfaceClass, String code) throws Exception {
         Class<T> clazz = createSimpleImpl(interfaceClass, code);
@@ -81,11 +87,13 @@ public class CompileSourceInMemory {
     Iterable<? extends JavaFileObject> sources = Arrays.asList(source);
     DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<JavaFileObject>();
     JavaFileManager standardFileManager = compiler.getStandardFileManager(null, null, null); 
-    final ByteArrayOutputStream classBytesStream = new ByteArrayOutputStream();
+    Map<String,ByteArrayOutputStream> classBytesStreams = new HashMap<String,ByteArrayOutputStream>();
     JavaFileManager fileManager = new ForwardingJavaFileManager<JavaFileManager>(standardFileManager) {
       public JavaFileObject getJavaFileForOutput(Location location, String fullClassName, Kind kind,
               FileObject sibling) throws IOException {
             URI classUri = URI.create("string:///" + fullClassName.replace('.', '/') + kind.extension);
+            final ByteArrayOutputStream classBytesStream = new ByteArrayOutputStream();
+            classBytesStreams.put(fullClassName, classBytesStream);
             return new SimpleJavaFileObject(classUri, kind) {
                 public OutputStream openOutputStream() throws IOException {
                     return classBytesStream;
@@ -98,6 +106,8 @@ public class CompileSourceInMemory {
     if (success) {
         ClassLoader transientClassLoader = new ClassLoader(CompileSourceInMemory.class.getClassLoader()) {
             public Class<?> findClass(String name) throws ClassNotFoundException {
+                ByteArrayOutputStream classBytesStream = classBytesStreams.get(name);
+                if (classBytesStream == null) {throw new ClassNotFoundException("could not find class "+name);}
                 byte[] classBytes = classBytesStream.toByteArray();
                 return defineClass(name, classBytes, 0, classBytes.length); 
             }
@@ -106,14 +116,18 @@ public class CompileSourceInMemory {
         System.out.println("compiled "+fullClassName+" in "+elapsed+" seconds");
         return (Class<T>)transientClassLoader.loadClass(fullClassName);
     } else {
-        System.out.println(classCode);
+        //System.out.println(classCode);
         for (Diagnostic<?> diagnostic : diagnostics.getDiagnostics()) {
             //System.out.println(diagnostic.getCode());
             //System.out.println(diagnostic.getKind());
             //System.out.println(diagnostic.getStartPosition());
             //System.out.println(diagnostic.getEndPosition());
             //System.out.println(diagnostic.getSource());
-            System.out.println(diagnostic.getMessage(null));
+            System.out.println(diagnostic.getKind()+": at "+diagnostic.getLineNumber()+","+diagnostic.getColumnNumber()+" "+diagnostic.getMessage(null));
+            if (diagnostic.getLineNumber() > 0) {
+                System.out.println(classCode.split("\n")[(int)diagnostic.getLineNumber()-1]);
+            }
+            System.out.println();
         }
         return null;
     }

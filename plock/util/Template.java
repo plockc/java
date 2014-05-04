@@ -484,7 +484,7 @@ public class Template {
         }
         return null;
     }
-    public String render(Map<String,Object> bindings) throws Exception {
+    public String render(Map<String,?> bindings) throws Exception {
         Renderer renderer = CompileSourceInMemory.<Renderer>createSimpleInstance(Renderer.class, javaSource);
         if (renderer == null) {
             throw new RuntimeException("failed to compile template: \n------"+new String(tpl)+"\n-----\n"+java);

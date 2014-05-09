@@ -15,6 +15,7 @@ import javafx.geometry.*;
 
 import plock.util.*;
 import plock.math.Finance;
+import plock.math.Finance.TmvParams;
 
 // TODO: cache the last text so we don't recompile on key up for example
 public class FinancePlanner extends Application {
@@ -42,13 +43,14 @@ public class FinancePlanner extends Application {
 
     private Runnable recompute = () -> {
         System.out.println(finance);
-        Finance f = finance;
-        //System.out.println("fv: "+f.solve("fv")+" new fv: "+f.getDouble("fv"));
+        Finance f = finance.copy();
+        f.n(f.getDouble(TmvParams.n)/12).pmt(f.getDouble(TmvParams.pmt)*12);
         RadioButton selectedButton = (RadioButton)solveToggleGroup.getSelectedToggle();
         String toggle = selectedButton.getText();
         String solveFor = (String)selectedButton.getProperties().get("paramName");
         Double updatedVal = f.solve(solveFor);
-        System.out.println("solved: "+updatedVal);
+        if ("n".equals(solveFor)) {updatedVal *= 12;}
+        else if ("pmt".equals(solveFor)) {updatedVal /= 12;}
         f.set(solveFor, updatedVal);
         TextField field = paramToField.get(solveFor);
         field.setText(((java.text.NumberFormat)field.getProperties().get("format")).format(updatedVal));
@@ -81,19 +83,20 @@ public class FinancePlanner extends Application {
         });
         f.focusedProperty().addListener( (obsVal, oldVal, newVal) -> {
             if (!newVal) {
-            System.out.println("exited field "+paramName);
-            if (f.getText().length()==0 || newVal.equals(".")) return;
-            finance.set(paramName, Double.parseDouble(f.getText()));
+                System.out.println("exited field "+paramName);
+                if (f.getText().length()==0 || newVal.equals(".")) return;
+                finance.set(paramName, Double.parseDouble(f.getText()));
+                recompute.run();
             }
         });
         f.textProperty().addListener( (obsVal,oldVal,newVal) ->{
             System.out.println("change "+paramName);
             if (newVal.length()==0 || newVal.equals(".")) return;
             if (!format.format(finance.getDouble(paramName)).equals(newVal)) {
-            try {
-                finance.set(paramName, Double.parseDouble(newVal));
-                recompute.run();
-            } catch (NumberFormatException e) {f.setText(oldVal);}
+                try {
+                    finance.set(paramName, Double.parseDouble(newVal));
+                    recompute.run();
+                } catch (NumberFormatException e) {f.setText(oldVal);}
             }
         });
         return f;
@@ -151,33 +154,22 @@ public class FinancePlanner extends Application {
         };
 
         int i=0;
+        form.add(LabelBuilder.create().text("Growth is compounded, so result is a little high").build(),0,i++);
         form.add(addParamName.apply("fv", radioButtonBuilder.selected(true).text("Future Value")), 0, i);
         form.add(createDoubleField("fv", true, moneyFormat), 1, i++);
         form.add(addParamName.apply("pv", radioButtonBuilder.selected(false).text("Present Value")), 0, i);
         form.add(createDoubleField("pv", false, moneyFormat), 1, i++);
-        form.add(addParamName.apply("r", radioButtonBuilder.selected(false).text("Rate")), 0, i);
+        form.add(addParamName.apply("r", radioButtonBuilder.selected(false).text("Annual Rate")), 0, i);
         form.add(createDoubleField("r", false, rateFormat), 1, i++);
-        form.add(addParamName.apply("n", radioButtonBuilder.selected(false).text("Number of Periods")), 0, i);
+        form.add(addParamName.apply("n", radioButtonBuilder.selected(false).text("Number of Months")), 0, i);
         form.add(createDoubleField("n", false, rateFormat), 1, i++);
-        form.add(addParamName.apply("pmt", radioButtonBuilder.selected(false).text("Payment")), 0, i);
+        form.add(addParamName.apply("pmt", radioButtonBuilder.selected(false).text("Monthly Payment")), 0, i);
         form.add(createDoubleField("pmt", false, moneyFormat), 1, i++);
-        form.add(addParamName.apply("g", radioButtonBuilder.selected(false).text("Growth")), 0, i);
+        form.add(addParamName.apply("g", radioButtonBuilder.selected(false).text("Annual Growth")), 0, i);
         form.add(createDoubleField("g", false, rateFormat), 1, i++);
 
-        java.util.concurrent.atomic.AtomicInteger row = new java.util.concurrent.atomic.AtomicInteger(6);
-
-        Stream.of("Rate Defined As", "Payment Applied", "Payment Growth Applied").forEach(label -> {
-            ToggleGroup periodToggleGroup = new ToggleGroup();
-            form.add(LabelBuilder.create().text(label).build(), 0, row.get());
-            RadioButtonBuilder buttonBuilder = RadioButtonBuilder.create().onAction(formHandler).toggleGroup(periodToggleGroup).text("Monthly");
-            RadioButton button = buttonBuilder.build();
-            form.add(button, 1, row.get());
-            button = ((RadioButtonBuilder)buttonBuilder.selected(true).text("Yearly")).build();
-            form.add(button, 2, row.get());
-            row.incrementAndGet();
-        });
-        form.add(CheckBoxBuilder.create().onAction(formHandler).text("Apply Rate Continuously").build(),0,8,2,8);
-        form.add(CheckBoxBuilder.create().onAction(formHandler).text("First Payment Immediately").build(),0,9,2,9);
+        form.add(CheckBoxBuilder.create().onAction(formHandler).text("Compounded Rate Monthly").build(),0,++i,2,i++);
+        form.add(CheckBoxBuilder.create().onAction(formHandler).text("First Payment Now").build(),0,++i,2,i++);
 
         SplitPane topAndBottom = new SplitPane();
         topAndBottom.setOrientation(javafx.geometry.Orientation.VERTICAL);

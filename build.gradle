@@ -39,6 +39,11 @@ test {
     }
 }
 
+task(trialerror, dependsOn:'classes', type:JavaExec) {
+	main='plock.math.Math'
+	classpath = sourceSets.main.runtimeClasspath
+}
+
 task(finance, dependsOn:'classes', type:JavaExec) {
 	main='alpha.FinancePlanner'
 	classpath = sourceSets.main.runtimeClasspath

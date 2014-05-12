@@ -32,7 +32,7 @@ public class FinancePlanner extends Application {
     }
 
     private static class Account {
-        Finance finance = new Finance();
+        Finance finance = new Finance().comp(12);
         Account pvRef, fvRef;
         Date start, end;
         Account startRef, endRef;
@@ -44,13 +44,10 @@ public class FinancePlanner extends Application {
     private Runnable recompute = () -> {
         System.out.println(finance);
         Finance f = finance.copy();
-        f.n(f.getDouble(TmvParams.n)/12).pmt(f.getDouble(TmvParams.pmt)*12);
         RadioButton selectedButton = (RadioButton)solveToggleGroup.getSelectedToggle();
         String toggle = selectedButton.getText();
         String solveFor = (String)selectedButton.getProperties().get("paramName");
         Double updatedVal = f.solve(solveFor);
-        if ("n".equals(solveFor)) {updatedVal *= 12;}
-        else if ("pmt".equals(solveFor)) {updatedVal /= 12;}
         f.set(solveFor, updatedVal);
         TextField field = paramToField.get(solveFor);
         field.setText(((java.text.NumberFormat)field.getProperties().get("format")).format(updatedVal));
@@ -159,9 +156,9 @@ public class FinancePlanner extends Application {
         form.add(createDoubleField("fv", true, moneyFormat), 1, i++);
         form.add(addParamName.apply("pv", radioButtonBuilder.selected(false).text("Present Value")), 0, i);
         form.add(createDoubleField("pv", false, moneyFormat), 1, i++);
-        form.add(addParamName.apply("r", radioButtonBuilder.selected(false).text("Annual Rate")), 0, i);
+        form.add(addParamName.apply("r", radioButtonBuilder.selected(false).text("Annual Effective Rate")), 0, i);
         form.add(createDoubleField("r", false, rateFormat), 1, i++);
-        form.add(addParamName.apply("n", radioButtonBuilder.selected(false).text("Number of Months")), 0, i);
+        form.add(addParamName.apply("n", radioButtonBuilder.selected(false).text("Number of Years")), 0, i);
         form.add(createDoubleField("n", false, rateFormat), 1, i++);
         form.add(addParamName.apply("pmt", radioButtonBuilder.selected(false).text("Monthly Payment")), 0, i);
         form.add(createDoubleField("pmt", false, moneyFormat), 1, i++);

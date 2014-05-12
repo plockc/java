@@ -11,7 +11,7 @@ repositories {
 }
 
 dependencies {
-    compile (['ch.qos.logback:logback-classic:1.0.13','junit:junit:4.11'])
+    compile (['ch.qos.logback:logback-classic:1.0.13','junit:junit:4.+'])
 }
 sourceSets { 
   main { 
@@ -29,8 +29,11 @@ publishing {
     publications { mavenJava(MavenPublication) { from components.java } }
 }
 
+// to run a single test here, set system property test.single=testName (simple class name minus "Test")
+// like gradle -Dtest.single=Finance test
 test {
     include 'plock/**'
+    testLogging.showStandardStreams = true
     beforeTest { descriptor ->
         logger.lifecycle("Running test: "+descriptor)
     }
@@ -51,6 +54,11 @@ task(finance, dependsOn:'classes', type:JavaExec) {
 
 task(fiddle, dependsOn:'classes', type:JavaExec) {
 	main='plock.util.JavaFiddle'
+	classpath = sourceSets.main.runtimeClasspath
+}
+
+task(blah, dependsOn:'classes', type:JavaExec) {
+	main='plock.math.Finance'
 	classpath = sourceSets.main.runtimeClasspath
 }
 

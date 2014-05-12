@@ -17,13 +17,18 @@ public class Math {
         double fs = f.apply(s);
         //System.out.println("binary expand target "+t+" and err: "+e+" with x: "+s+" inc: "+inc+" f(x):"+fs+" f(x+inc):"+right);
 
+        if (Double.isNaN(fs) || Double.isNaN(right)) {
+            throw new IllegalArgumentException("cannot find a valid value for function");
+        }
+        if (abs(fs-t) < e) {return s;}
+        if (abs(right-t) < e) {return s+inc;}
         // so first two here check for t not inbetween f(s) and f(s+inc)
-        if (fs < t && right <= t) { // is t more to the right?
+        if (fs < t && right < t) { // is t more to the right?
             //System.out.println("t is larger, move to the right");
             // if moving x to the right moves f(x) right, keep going more right, else left
             return iterateSolve(f, t, right>fs ? (s+inc) : (s-2*inc), inc*2, e);
         }
-        if (fs > t && right >= t) { // is t more to the left?
+        if (fs > t && right > t) { // is t more to the left?
             //System.out.println("t is smaller, move to the left");
             // if moving x to the right moves f(x) left, keep going more right, else left
             return iterateSolve(f, t, right<fs ? (s+inc) : (s-2*inc), inc*2, e);
@@ -36,7 +41,7 @@ public class Math {
         double right = f.apply(s+inc);
         double fs = f.apply(s);
         //System.out.println("binary search target "+t+" and err: "+e+" with x: "+s+" inc: "+inc+" f(x):"+fs+" f(x+inc):"+right);
-        if (inc == 0.0) {return s;} 
+        if (inc == 0.0 || fs == t) {return s;} 
         // first we check if we already have and answer with f(s)
         // opposite signs, subtracting will give total distance that we need absolute value of
         if (copySign(fs,t) != fs && abs(fs-t) <= e) {return s;}

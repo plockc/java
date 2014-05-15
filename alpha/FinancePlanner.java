@@ -19,6 +19,7 @@ import plock.math.Finance;
 import plock.math.Finance.TmvParams;
 
 // TODO: cache the last text so we don't recompile on key up for example
+// TODO: on change in the account, reprocess the template
 public class FinancePlanner extends Application {
     private HashMap<String,Finance> accounts = new HashMap<String,Finance>();
 
@@ -52,7 +53,6 @@ public class FinancePlanner extends Application {
         f.set(solveFor, updatedVal);
         TextField field = paramToField.get(solveFor);
         field.setText(((java.text.NumberFormat)field.getProperties().get("format")).format(updatedVal));
-        System.out.println("parm: "+param+" comp_pmt: "+f.getDouble("comp_pmt"));
         switch(param) {
             case "pmt": Optional.of(paramToField.get("comp_pmt")).ifPresent(comp->
                     comp.setText(((Format)comp.getProperties().get("format")).format(f.getDouble("comp_pmt"))));
@@ -131,7 +131,6 @@ public class FinancePlanner extends Application {
                 Template tpl = null;
                 tpl = new Template().addImports(Arrays.asList("plock.math.Finance"))
                     .setSource(sourceCode.getText().toCharArray());
-                // TODO: template needs to set imports before parsing, maybe split out construction and parsing
                 output.setText(tpl.getJava());
                 System.out.println(tpl.render(finance.getValues()));
             } catch (Exception e) {

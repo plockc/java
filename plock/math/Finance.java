@@ -42,7 +42,7 @@ public class Finance implements Cloneable {
         if (comp_r == 0.0) {
             pmt = payment/comp;
         } else {
-            pmt = comp_r*pv/(pow(1+comp_r,comp)-1);
+            pmt = comp_pmt*comp_r/(pow(1+comp_r,comp)-1);
         }
         return this;
     }

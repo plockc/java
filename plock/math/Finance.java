@@ -15,7 +15,7 @@ import static java.lang.Math.*;
 public class Finance implements Cloneable {
     private double pv=0.0, fv=0.0, r=0.0, pmt=0.0, g=0.0, n=0.0;
     /** this is all the payments together for a whole period with compounded interest on the payments */
-    private double comp_pmt;
+    private double comp_pmt=0.0;
     /** this is the rate that will be compounded "comp" times across a single period */
     private double comp_r;
     private boolean due = false;
@@ -23,7 +23,7 @@ public class Finance implements Cloneable {
 
     public String toString() {return "{fv:"+fv+",pv:"+pv+",r:"+r+",comp_r:"+comp_r+",pmt:"+pmt
         +",comp_pmt:"+comp_pmt+",g:"+g+",n:"+n+",comp:"+comp+"}";}
-    public enum TmvParams { pv, fv, r, g, n, pmt, due, comp };
+    public enum TmvParams { pv, fv, r, g, n, pmt, comp_pmt, due, comp };
 
     public Finance pv(double pv) {this.pv=pv; return this;}
     public Finance fv(double fv) {this.fv=fv; return this;}
@@ -36,16 +36,30 @@ public class Finance implements Cloneable {
     }
     /** compounds the given nominal rate to determine effective rate */
     public Finance rFromNominal(double nominal) {r(pow(1+nominal/12,12)-1); return this;}
+    public Finance comp_pmt(double payment) {
+        comp_pmt = payment;
+        if (comp == 1) {pmt=payment; return this;}
+        if (comp_r == 0.0) {
+            pmt = payment/comp;
+        } else {
+            pmt = comp_r*pv/(pow(1+comp_r,comp)-1);
+        }
+        return this;
+    }
     public Finance pmt(double payment) {
+        // TODO: annuity due
         pmt=payment;
         if (comp == 1) {comp_pmt=pmt; return this;}
-        // this is an orinary annuity for "comp" months
-        comp_pmt = payment/comp_r*(pow(1+comp_r,comp)-1);
+        if (comp_r == 0.0) {
+            comp_pmt=comp*pmt;
+        } else {
+            // this is an orinary annuity for "comp" months
+            comp_pmt = payment/comp_r*(pow(1+comp_r,comp)-1);
+        }
         return this;
     }
     public Finance g(double g) {this.g=g; return this;}
     public Finance n(double n) {this.n=n; return this;}
-    /** TODO: convert payment and rate */
     public Finance comp(int comp) {
         this.comp = comp;
         r(r); pmt(pmt); // this will refigure out the compounded payment and rate
@@ -57,8 +71,8 @@ public class Finance implements Cloneable {
 
     public Map<String,?> getValues() {
         Stream s = Stream.of(TmvParams.pv, TmvParams.fv, TmvParams.pmt, TmvParams.r, 
-                TmvParams.g, TmvParams.n, TmvParams.comp);
-        Collector c = Collectors.toMap(k->k.toString(),k->getDouble(k.toString()));
+                TmvParams.g, TmvParams.n, TmvParams.comp, TmvParams.comp_pmt);
+        Collector c = Collectors.toMap(k->k.toString(),k->get(k.toString()));
         Map<String,?> vals = (Map<String,?>)s.collect(c);
         return vals;
     }
@@ -66,12 +80,13 @@ public class Finance implements Cloneable {
     public Double getDouble(String label) {return getDouble(TmvParams.valueOf(label)); }
     public Double getDouble(TmvParams p) {
         switch(p) {
-            case pv: case fv: case r: case g: case n: case pmt:
+            case pv: case fv: case r: case g: case n: case pmt: case comp_pmt:
              return (Double)get(p);
             default:
         }
-        throw new IllegalArgumentException("cannot set "+p+" with a double");
+        throw new IllegalArgumentException("cannot get "+p+" as a double");
     }    
+    public Object get(String p) {return get(TmvParams.valueOf(p));}
     public Object get(TmvParams p) {
         switch (p) {
             case pv: return pv; 
@@ -79,11 +94,12 @@ public class Finance implements Cloneable {
             case r: return r;
             case g: return g;
             case pmt: return pmt;
+            case comp_pmt: return comp_pmt;
             case n: return n;
             case comp: return comp;
             case due: return due;
-            default: return getDouble(p);
         }
+        throw new IllegalArgumentException("cannot get "+p);
     }
     public Finance set(String label, double d) {return set(TmvParams.valueOf(label), d); }
     public Finance set(TmvParams p, double d) {
@@ -94,6 +110,7 @@ public class Finance implements Cloneable {
             case g: return g(d);
             case n: return n(d);
             case pmt: return pmt(d);
+            case comp_pmt: return comp_pmt(d);
         }
         throw new IllegalArgumentException("cannot set "+p+" with a double");
     }
@@ -146,6 +163,8 @@ public class Finance implements Cloneable {
                 if (pmt==0.0 || n == 0.0) {throw new IllegalArgumentException("cannot solve g with no payments");}
                 break;
             case n:
+                break;
+            case comp_pmt:
                 break;
             default:
                 throw new IllegalArgumentException("not implemented for "+solve);

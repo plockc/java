@@ -3,6 +3,7 @@ package alpha;
 import java.io.*;
 import java.util.*;
 import java.util.stream.*;
+import java.util.function.*;
 import java.text.*;
 import javafx.application.Application;
 import javafx.event.*;
@@ -41,7 +42,7 @@ public class FinancePlanner extends Application {
     private Account acct = new Account();
     private Finance finance = acct.finance;
 
-    private Runnable recompute = () -> {
+    private Consumer<String> recompute = param -> {
         System.out.println(finance);
         Finance f = finance.copy();
         RadioButton selectedButton = (RadioButton)solveToggleGroup.getSelectedToggle();
@@ -51,8 +52,18 @@ public class FinancePlanner extends Application {
         f.set(solveFor, updatedVal);
         TextField field = paramToField.get(solveFor);
         field.setText(((java.text.NumberFormat)field.getProperties().get("format")).format(updatedVal));
+        System.out.println("parm: "+param+" comp_pmt: "+f.getDouble("comp_pmt"));
+        switch(param) {
+            case "pmt": Optional.of(paramToField.get("comp_pmt")).ifPresent(comp->
+                    comp.setText(((Format)comp.getProperties().get("format")).format(f.getDouble("comp_pmt"))));
+                break;
+            case "comp_pmt": Optional.of(paramToField.get("pmt")).ifPresent(comp->
+                    comp.setText(((Format)comp.getProperties().get("format")).format(f.getDouble("pmt"))));
+                break;
+        }                        
     };
-    private EventHandler<ActionEvent> formHandler = e -> recompute.run();
+    private EventHandler<ActionEvent> formHandler = e -> 
+        recompute.accept((String)((Node)e.getSource()).getProperties().get("paramName"));
 
     private TextField createDoubleField(String paramName, boolean disabled, NumberFormat format) {
         String initialValue = format.format(finance.getDouble(paramName));
@@ -83,7 +94,7 @@ public class FinancePlanner extends Application {
                 System.out.println("exited field "+paramName);
                 if (f.getText().length()==0 || newVal.equals(".")) return;
                 finance.set(paramName, Double.parseDouble(f.getText()));
-                recompute.run();
+                recompute.accept(paramName);
             }
         });
         f.textProperty().addListener( (obsVal,oldVal,newVal) ->{
@@ -92,7 +103,7 @@ public class FinancePlanner extends Application {
             if (!format.format(finance.getDouble(paramName)).equals(newVal)) {
                 try {
                     finance.set(paramName, Double.parseDouble(newVal));
-                    recompute.run();
+                    recompute.accept(paramName);
                 } catch (NumberFormatException e) {f.setText(oldVal);}
             }
         });
@@ -142,7 +153,7 @@ public class FinancePlanner extends Application {
         form.setHgap(10); form.setVgap(12);
         form.setPadding(new Insets(10,10,10,10));
 
-        RadioButtonBuilder radioButtonBuilder = RadioButtonBuilder.create().onAction(formHandler)
+        RadioButtonBuilder radioButtonBuilder = RadioButtonBuilder.create()/*.onAction(formHandler)*/
             .toggleGroup(solveToggleGroup).selected(false);
 
         java.util.function.BiFunction<String,LabeledBuilder,RadioButton> addParamName = (p,b) -> {
@@ -160,13 +171,15 @@ public class FinancePlanner extends Application {
         form.add(createDoubleField("r", false, rateFormat), 1, i++);
         form.add(addParamName.apply("n", radioButtonBuilder.selected(false).text("Number of Years")), 0, i);
         form.add(createDoubleField("n", false, rateFormat), 1, i++);
-        form.add(addParamName.apply("pmt", radioButtonBuilder.selected(false).text("Monthly Payment")), 0, i);
+        form.add(addParamName.apply("pmt", radioButtonBuilder.selected(false).text("Monthly Incoming")), 0, i);
         form.add(createDoubleField("pmt", false, moneyFormat), 1, i++);
-        form.add(addParamName.apply("g", radioButtonBuilder.selected(false).text("Annual Growth")), 0, i);
+        form.add(addParamName.apply("comp_pmt", radioButtonBuilder.selected(false).text("Annual Incoming")), 0, i);
+        form.add(createDoubleField("comp_pmt", false, moneyFormat), 1, i++);
+        form.add(addParamName.apply("g", radioButtonBuilder.selected(false).text("Annual Incoming Growth")), 0, i);
         form.add(createDoubleField("g", false, rateFormat), 1, i++);
 
-        form.add(CheckBoxBuilder.create().onAction(formHandler).text("Compounded Rate Monthly").build(),0,++i,2,i++);
-        form.add(CheckBoxBuilder.create().onAction(formHandler).text("First Payment Now").build(),0,++i,2,i++);
+        //form.add(CheckBoxBuilder.create().onAction(formHandler).text("Compounded Rate Monthly").build(),0,++i,2,i++);
+        //form.add(CheckBoxBuilder.create().onAction(formHandler).text("First Payment Now").build(),0,++i,2,i++);
 
         SplitPane topAndBottom = new SplitPane();
         topAndBottom.setOrientation(javafx.geometry.Orientation.VERTICAL);
@@ -179,7 +192,7 @@ public class FinancePlanner extends Application {
         root.setCenter(topAndBottom);
 
         primaryStage.setTitle("Hello World!");
-        primaryStage.setScene(new Scene(root, 1280, 500));
+        primaryStage.setScene(new Scene(root, 1280, 900));
         primaryStage.show();
 	}
 

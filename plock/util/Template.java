@@ -510,7 +510,8 @@ public class Template {
             class Test {public void validate(String template, String result) throws Exception {
                 Template t = null;
                 try {
-                    t = new Template().setSource(template.toCharArray());
+                    t = new Template().addImports(Arrays.asList("plock.math.Finance"));
+                    t.setSource(template.toCharArray());
                 } catch (ParseException e) {
                     throw new RuntimeException(template,e);
                 }
@@ -564,6 +565,7 @@ public class Template {
             // new Test().validate("Hello {5--3}", "Hello {5--3}");
             //new Test().validate("Hello {$one+$num=2} {$num} 1", "Hello 3 2 1");
             new Test().validate("Hello {$msg=\"world\"}{$msg}", "Hello world");
+            new Test().validate("Hello {$one+($num=2)} {$num} 1", "Hello 3 2 1");
             new Test().validate("Hello {$one+($num=2)} {$num} 1", "Hello 3 2 1");
         }
     }

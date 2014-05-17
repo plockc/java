@@ -135,7 +135,7 @@ public class Finance implements Cloneable {
         switch (solve) {
             case fv:
                 if (g==r) {
-                    return comp_pmt*n*pow(1+r,n-1);
+                    return pv * rateFactor + comp_pmt*n*pow(1+r,n-1);
                 } else {
                     return pv * rateFactor + comp_pmt/(r-g) * ( rateFactor - pow(1+g,n) );
                 }

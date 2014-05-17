@@ -62,8 +62,9 @@ public class FinancePlanner extends Application {
                 break;
         }                        
     };
-    private EventHandler<ActionEvent> formHandler = e -> 
+    private EventHandler<ActionEvent> formHandler = e ->  {
         recompute.accept((String)((Node)e.getSource()).getProperties().get("paramName"));
+    };
 
     private TextField createDoubleField(String paramName, boolean disabled, NumberFormat format) {
         String initialValue = format.format(finance.getDouble(paramName));
@@ -155,8 +156,14 @@ public class FinancePlanner extends Application {
         form.setHgap(10); form.setVgap(12);
         form.setPadding(new Insets(10,10,10,10));
 
-        RadioButtonBuilder radioButtonBuilder = RadioButtonBuilder.create()/*.onAction(formHandler)*/
-            .toggleGroup(solveToggleGroup).selected(false);
+        RadioButtonBuilder radioButtonBuilder = RadioButtonBuilder.create().onAction(button -> {
+            String solveFor = (String)((Node)button.getSource()).getProperties().get("paramName");
+            paramToField.forEach((String k, TextField v)->{
+                if (v.isDisabled() && !solveFor.equals(k)) {v.setDisable(false);}
+                if (!v.isDisabled() && solveFor.equals(k)) {v.setDisable(true);}
+                if (k.equals("comp_pmt")) {v.setDisable(solveFor.equals("pmt"));}
+            });
+        }).toggleGroup(solveToggleGroup).selected(false);
 
         java.util.function.BiFunction<String,LabeledBuilder,RadioButton> addParamName = (p,b) -> {
             RadioButton button = ((RadioButtonBuilder)b).build();
@@ -164,7 +171,6 @@ public class FinancePlanner extends Application {
         };
 
         int i=0;
-        form.add(LabelBuilder.create().text("Growth is compounded, so result is a little high").build(),0,i++, 3, 1);
         form.add(addParamName.apply("fv", radioButtonBuilder.selected(true).text("Future Value")), 0, i);
         form.add(createDoubleField("fv", true, moneyFormat), 2, i++);
         form.add(addParamName.apply("pv", radioButtonBuilder.selected(false).text("Present Value")), 0, i);
@@ -176,14 +182,10 @@ public class FinancePlanner extends Application {
         form.add(addParamName.apply("pmt", radioButtonBuilder.selected(false).text("Incoming")), 0, i, 1, 2);
         form.add(LabelBuilder.create().text("Monthly").minWidth(Label.USE_PREF_SIZE).build(), 1, i);
         form.add(createDoubleField("pmt", false, moneyFormat), 2, i++);
-        //form.add(addParamName.apply("comp_pmt", radioButtonBuilder.selected(false).text("Annual Incoming")), 0, i);
         form.add(LabelBuilder.create().text("Yearly").build(), 1, i);
         form.add(createDoubleField("comp_pmt", false, moneyFormat), 2, i++);
         form.add(addParamName.apply("g", radioButtonBuilder.selected(false).text("Annual Incoming Growth")), 0, i);
         form.add(createDoubleField("g", false, rateFormat), 2, i++);
-
-        //form.add(CheckBoxBuilder.create().onAction(formHandler).text("Compounded Rate Monthly").build(),0,++i,2,i++);
-        //form.add(CheckBoxBuilder.create().onAction(formHandler).text("First Payment Now").build(),0,++i,2,i++);
 
         SplitPane topAndBottom = new SplitPane();
         topAndBottom.setOrientation(javafx.geometry.Orientation.VERTICAL);

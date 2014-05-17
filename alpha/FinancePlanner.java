@@ -92,14 +92,17 @@ public class FinancePlanner extends Application {
         f.focusedProperty().addListener( (obsVal, oldVal, newVal) -> {
             if (!newVal) {
                 System.out.println("exited field "+paramName);
-                if (f.getText().length()==0 || newVal.equals(".")) return;
-                finance.set(paramName, Double.parseDouble(f.getText()));
+                String fieldValue = f.getText();
+                if (f.getText().length()==0 || fieldValue.equals(".") || fieldValue.equals("-")) {
+                    fieldValue = "0";
+                }
+                finance.set(paramName, Double.parseDouble(fieldValue));
                 recompute.accept(paramName);
             }
         });
         f.textProperty().addListener( (obsVal,oldVal,newVal) ->{
-            System.out.println("change "+paramName);
-            if (newVal.length()==0 || newVal.equals(".")) return;
+            System.out.println("change "+paramName+" from "+oldVal+" to "+newVal);
+            if (newVal.length()==0 || newVal.equals(".") || newVal.equals("-")) return;
             if (!format.format(finance.getDouble(paramName)).equals(newVal)) {
                 try {
                     finance.set(paramName, Double.parseDouble(newVal));

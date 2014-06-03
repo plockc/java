@@ -14,7 +14,7 @@ public class Controls {
     public static class DoubleTextField extends TextField {
         private DoubleProperty val; 
         private NumberFormat format = NumberFormat.getInstance();
-        public DoubleTextField(DoubleProperty prop, int numFractionDigits) {
+        public DoubleTextField(DoubleProperty prop, int numFractionDigits, int shift) {
             val=prop;
             setText("0");
             setAlignment(Pos.CENTER_RIGHT);
@@ -27,13 +27,13 @@ public class Controls {
                         return 0.0;
                     }
                     try {
-                        return format.parse(str).doubleValue();
+                        return format.parse(str).doubleValue()*Math.pow(10,-shift);
                     } catch (ParseException e) {
                         System.out.println("doh on "+str+": "+e);
                         return 0.0;
                     }
                 }
-                public String toString(Number d) {return format.format(d);}
+                public String toString(Number d) {return format.format(d.doubleValue()*Math.pow(10,shift));}
             });                   
         } 
         @Override public void replaceText(int start, int end, String text) {
@@ -70,8 +70,8 @@ public class Controls {
     /** 
      * thanks for the help http://fxexperience.com/2012/02/restricting-input-on-a-textfield/
      */
-    public static TextField createDoubleField(DoubleProperty prop, int numFractionDigits) {
-        return new DoubleTextField(prop, numFractionDigits);
+    public static TextField createDoubleField(DoubleProperty prop, int numFractionDigits, int shift) {
+        return new DoubleTextField(prop, numFractionDigits, shift);
     }
 }
 

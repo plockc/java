@@ -15,9 +15,7 @@ dependencies {
 }
 sourceSets { 
   main { 
-    java { 
-      srcDir '.'
-    }
+    java { srcDir '.' }
     output.classesDir = 'build' 
   }
   test {
@@ -34,6 +32,9 @@ publishing {
 test {
     include 'plock/**'
     testLogging.showStandardStreams = true
+    testLogging {
+        exceptionFormat='full'
+    }
     beforeTest { descriptor ->
         logger.lifecycle("Running test: "+descriptor)
     }
@@ -52,7 +53,7 @@ task(finance, dependsOn:'classes', type:JavaExec) {
 	classpath = sourceSets.main.runtimeClasspath
 }
 
-task(fiddle, dependsOn:'classes', type:JavaExec) {
+task(fiddle, dependsOn:'processResources', type:JavaExec) {
 	main='plock.util.JavaFiddle'
 	classpath = sourceSets.main.runtimeClasspath
 }

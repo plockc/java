@@ -1,0 +1,24 @@
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<BorderPane fx:controller="alpha.CashFlowsController" xmlns:fx="http://javafx.com/fxml">
+    <top>
+        <BorderPane>
+            <center>
+                <TextField fx:id="newAccountNameField" alignment="CENTER_RIGHT" promptText="Enter name for new Cash Flow"/>
+            </center>
+            <right><Button text="Add" onAction="#addAccount"/></right>
+        </BorderPane>
+    </top>
+    <center>
+        <Accordion fx:id="accountsAccordion">
+            <panes>
+                <TitledPane text="First">
+                    <alpha.AccountController fx:id="accountOne"/>
+                </TitledPane>
+                <TitledPane text="Second">
+                    <alpha.AccountController fx:id="accountTwo"/>
+                </TitledPane>
+            </panes>
+        </Accordion>
+    </center>
+</BorderPane>

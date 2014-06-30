@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?language javascript?>
+<?import javafx.collections.*?>
+<?import javafx.scene.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.*?>
+<?import java.lang.*?>
+<?import java.util.*?>
+<?import java.util.concurrent.atomic.*?>
+<?import javafx.util.*?>
+<?import javafx.util.converter.*?>
+
+<fx:root type="javafx.scene.layout.GridPane" xmlns:fx="http://javafx.com/fxml" alignment="CENTER" hgap="10" vgap="12">
+    <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
+    <fx:define>
+        <HashMap fx:id="paramToLabel" fv="Future Value" pv="Present Value"/>
+        <AtomicInteger fx:id="row"/>
+        <plock.math.Finance fx:id="finance"/>
+    </fx:define>
+
+    <Label text="Future Value" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.columnSpan="2"/>
+    <plock.fx.Controls.DoubleTextField disable="true" style="-fx-background-color: lightgrey; -fx-opacity: 1" GridPane.columnIndex="2" GridPane.rowIndex="$row">
+        <properties paramName="fv"/>
+    </plock.fx.Controls.DoubleTextField>
+
+    <fx:script>row.set(row.get()+1);</fx:script>
+
+    <Label text="Present Value" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.columnSpan="2"/>
+    <plock.fx.Controls.DoubleTextField GridPane.columnIndex="2" GridPane.rowIndex="$row">
+        <properties paramName="pv"/>
+    </plock.fx.Controls.DoubleTextField>
+
+    <fx:script>row.set(row.get()+1);</fx:script>
+
+    <Label text="Annual Effective Rate" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.columnSpan="2"/>
+    <plock.fx.Controls.DoubleTextField shift="2" GridPane.columnIndex="2" GridPane.rowIndex="$row">
+        <properties paramName="r"/>
+    </plock.fx.Controls.DoubleTextField>
+    <Label text="\%" GridPane.columnIndex="3" GridPane.rowIndex="$row"/>
+
+    <fx:script>row.set(row.get()+1);</fx:script>
+
+    <Label text="Number of Years" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.columnSpan="2"/>
+    <plock.fx.Controls.DoubleTextField GridPane.columnIndex="2" GridPane.rowIndex="$row">
+        <properties paramName="n"/>
+    </plock.fx.Controls.DoubleTextField>
+
+    <fx:script>row.set(row.get()+1);</fx:script>
+
+    <Label text="Incoming" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.rowSpan="2"/>
+    <Label text="Monthly" GridPane.columnIndex="1" GridPane.rowIndex="$row" GridPane.halignment="RIGHT"/>
+    <plock.fx.Controls.DoubleTextField GridPane.columnIndex="2" GridPane.rowIndex="$row">
+        <properties paramName="pmt"/>
+    </plock.fx.Controls.DoubleTextField>
+
+    <fx:script>row.set(row.get()+1);</fx:script>
+
+    <Label text="Yearly" GridPane.columnIndex="1" GridPane.rowIndex="$row" GridPane.halignment="RIGHT"/>
+    <plock.fx.Controls.DoubleTextField GridPane.columnIndex="2" GridPane.rowIndex="$row">
+        <properties paramName="comp_pmt"/>
+    </plock.fx.Controls.DoubleTextField>
+
+    <fx:script>row.set(row.get()+1);</fx:script>
+
+    <Label text="Annual Incoming Growth" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.columnSpan="2"/>
+    <plock.fx.Controls.DoubleTextField shift="2" GridPane.columnIndex="2" GridPane.rowIndex="$row">
+        <properties paramName="g"/>
+    </plock.fx.Controls.DoubleTextField>
+    <Label text="\%" GridPane.columnIndex="3" GridPane.rowIndex="$row"/>
+
+    <fx:script>row.set(row.get()+1);</fx:script>
+
+    <Label text="Solve For" GridPane.columnIndex="1" GridPane.rowIndex="$row" GridPane.halignment="RIGHT"/>
+    <ChoiceBox fx:id="solveFor" GridPane.columnIndex="2" GridPane.rowIndex="$row">
+        <items><FXCollections fx:factory="observableArrayList">
+            <String fx:value="fv"/>
+            <String fx:value="pv"/>
+        </FXCollections></items>
+        <value><String fx:value="fv"/></value>
+    </ChoiceBox>
+</fx:root>
+

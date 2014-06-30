@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane minWidth="400" minHeight="300" fx:controller="alpha.GuiController" xmlns:fx="http://javafx.com/fxml">
+    <center>
+        <SplitPane id="topAndBottom" orientation="VERTICAL">
+            <items>
+                <SplitPane fx:id="sourceAndOutput" dividerPositions=".6">
+                    <items>
+                        <TextArea fx:id="sourceCode" onKeyTyped="#sourceChanged" onKeyPressed="#sourceChanged"
+                            onKeyReleased="#sourceChanged" promptText="This is a template with bound values"/>
+                        <fx:include source="cashflows.fxml"/>
+                    </items>
+                </SplitPane> 
+                <TextArea fx:id="console">
+                </TextArea>
+            </items>
+        </SplitPane>
+    </center>
+</BorderPane>
+

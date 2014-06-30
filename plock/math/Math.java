@@ -6,7 +6,7 @@ import java.util.function.*;
 public class Math {
    /** @param f function to take parameter x and produce f(x)
         @param t desired f(x)
-        @param s curent x
+        @param s current x
         @param inc how much to increment / decrement
         @param e amount of error from t allowed to say we found a solution
         @return x within e of the exact answer
@@ -68,6 +68,7 @@ public class Math {
         f = x -> {return -20 + pow(2.001,x);};
         System.out.println("answer: "+iterateSolve(f, 50, 0, .00000000001, .000000001));
         System.out.println("answer: "+iterateSolve(f, 0, 0, .00000000001, .000000001));
+        // this one should fail
         System.out.println("answer: "+iterateSolve(f, -33.33, 0, .00000000001, .000000001));
 
     }

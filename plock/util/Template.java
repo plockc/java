@@ -401,6 +401,14 @@ public class Template {
         if (obj == null) {throw new BadReferenceException("attempted to call "+methodName+" on a null object");}
         return invoke(methodName, obj.getClass(), obj, args);
     }
+    private static void setInvocationArg(Object[] mappedArgs, int argIndex, Object value, boolean varArgs) {
+        //System.out.println("ind: "+argIndex+" val: "+value+" varargs: "+varArgs);
+        if (varArgs && argIndex>=mappedArgs.length-1) {
+            Array.set(mappedArgs[mappedArgs.length-1], argIndex-mappedArgs.length+1, value);
+        } else {
+            mappedArgs[argIndex] = value;
+        }
+    }
     // TODO: deal with null as an argument, can map to any non primitize class type
     public static Object invoke(String methodName, Class clazz, Object obj, Object[] args) throws BadReferenceException {
         Class[] argClasses = Arrays.stream(args).map(a->a.getClass()).toArray(size->new Class[size]);
@@ -408,23 +416,48 @@ public class Template {
         Optional<Method> method = Optional.empty();
         // try to grab with exact match on parameters
         try {method = Optional.of(clazz.getMethod(methodName, argClasses));} catch (NoSuchMethodException ignored) {}
-        class MethodMeta {Method method; int rank=0; Object[] mappedArgs = new Object[args.length];}
+        class MethodMeta {Method method; int rank=0; Object[] mappedArgs;}
         // if couldn't get an exact method, we have to search through them all
         MethodMeta invocationMeta = Arrays.stream(clazz.getMethods())
-            .filter(m->m.getParameterTypes().length == args.length && m.getName().equals(methodName))
+            .filter(m->m.getName().equals(methodName))
+            .filter(m->m.getParameterTypes().length == args.length 
+                        || m.isVarArgs() && m.getParameterTypes().length-1 <= args.length) 
             .map(m->{
                 MethodMeta methodMeta = new MethodMeta();
                 methodMeta.method=m; 
                 Class[] paramClasses = m.getParameterTypes();
-               // System.out.println("  testing "+methodName+"("+
-               //     Arrays.stream(m.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))+")");
-                for (int i=0; i<paramClasses.length; i++) {
-                    methodMeta.mappedArgs[i] = args[i];
-                    Class paramClass = paramClasses[i], argClass = argClasses[i];
-                    if (paramClass.equals(argClass)) {continue;}
+                methodMeta.mappedArgs = new Object[paramClasses.length]; // done now in case of varags
+                //System.out.println("  testing "+methodName+"("+Arrays.stream(
+                //    m.getParameterTypes()).map(p->p.getSimpleName()).collect(Collectors.joining(", "))+")");
+                if (m.isVarArgs()) { // create the array now to simplify loop
+                    Class varargsClass = paramClasses[paramClasses.length-1].getComponentType();
+                    int size = args.length-paramClasses.length+1;
+                    methodMeta.mappedArgs[paramClasses.length-1] = Array.newInstance(varargsClass, size); 
+                }
+                for (int i=0; i<args.length; i++) {
+                    Class argClass = argClasses[i];
+                    int paramsLength = paramClasses.length;
+                    Class paramClass = paramClasses[Math.min(paramsLength-1, i)];
+                    if (m.isVarArgs() && i>=paramsLength-1) {
+                        paramClass = paramClass.getComponentType();
+                    }
+                    if (paramClass.isPrimitive()) {paramClass = primitiveToWrapper.get(paramClass);}
+                    if (paramClass.equals(argClass)) { 
+                        setInvocationArg(methodMeta.mappedArgs, i, args[i], m.isVarArgs()); 
+                        continue; 
+                    }
                     if (Number.class.isAssignableFrom(argClass)) {
                         if (paramClass.isPrimitive()) {paramClass = primitiveToWrapper.get(paramClass);}
-                        if (argClass.equals(paramClass)) {continue;} // in case primitive method param was just promoted to wrapper
+                        // in case primitive method param was just promoted to wrapper
+                        if (argClass.equals(paramClass)) {
+                            setInvocationArg(methodMeta.mappedArgs, i, args[i], m.isVarArgs()); 
+                            continue; 
+                        }
+                        if (paramClass.equals(Object.class) || paramClass.equals(Number.class)) {
+                            setInvocationArg(methodMeta.mappedArgs, i, args[i], m.isVarArgs()); 
+                            methodMeta.rank++;
+                            continue;
+                        }
                         if (intTypes.contains(paramClass) && floatTypes.contains(argClass)) {
                             //System.out.println("    cannot convert "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
                             return null;
@@ -433,7 +466,9 @@ public class Template {
                         if (intTypes.contains(argClass) && floatTypes.contains(paramClass)) {
                             //System.out.println("    converting non-decimal "+argClass.getSimpleName()+" to "+paramClass.getSimpleName());
                             methodMeta.rank+=2;
-                            methodMeta.mappedArgs[i] = castingFunctions.get(paramClass).apply((Number)args[i]);
+                            // TODO : deal with varags array set here
+                            Object arg = castingFunctions.get(paramClass).apply((Number)args[i]);
+                            setInvocationArg(methodMeta.mappedArgs, i, arg, m.isVarArgs()); 
                         } else {
                             Number num = (Number)args[i];
                             SortedMap wideningTypes = null;
@@ -448,14 +483,17 @@ public class Template {
                                 //System.out.println("    cannot do narrowing cast from "+args[i]+" to "+paramClass.getSimpleName());
                                 return null;
                             }
-                            methodMeta.mappedArgs[i] = castingFunctions.get(paramClass).apply(num);
+                            // TODO : deal with varags array set here
+                            Object arg = castingFunctions.get(paramClass).apply(num);
+                            setInvocationArg(methodMeta.mappedArgs, i, arg, m.isVarArgs()); 
                             methodMeta.rank++;
                             //System.out.println("    casting to : "+methodMeta.mappedArgs[i].getClass().getSimpleName());
                         }
                     } else {
-                        if (!paramClasses[i].isAssignableFrom(argClasses[i])) {
+                        if (!paramClass.isAssignableFrom(argClass)) {
                             return null;
                         }
+                        setInvocationArg(methodMeta.mappedArgs, i, args[i], m.isVarArgs()); 
                         methodMeta.rank+=2;
                     }
                 }
@@ -567,6 +605,9 @@ public class Template {
             new Test().validate("Hello {$msg=\"world\"}{$msg}", "Hello world");
             new Test().validate("Hello {$one+($num=2)} {$num} 1", "Hello 3 2 1");
             new Test().validate("Hello {$one+($num=2)} {$num} 1", "Hello 3 2 1");
+            new Test().validate("Hello {$String::format(\"%d %s!\", 1, $greeting)}", "Hello 1 world!");
+            new Test().validate("Hello {$String::format(\"%s!\", $greeting)}", "Hello world!");
+            new Test().validate("Hello {$String::format(\"!\")}", "Hello !");
         }
     }
 }

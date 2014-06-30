@@ -39,10 +39,11 @@ public class JavaFiddle extends Application {
                     System.setOut(consolePrinter);
                     StringBuilder code = new StringBuilder();
                     Stream.of("application", "event", "scene.control", "scene.input", "scene.layout", "scene",
-                            "geometry").forEach(p->code.append("import javafx."+p+".*;\n"));
-                    Stream.of("plock.math", "java.io", "java.util", "java.util.stream", "javafx.beans.value",
-                            "java.util.concurrent.atomic", "javafx.beans.property", "javafx.util.converter",
-                            "java.text", "java.util.function").forEach(p->code.append("import "+p+".*;\n"));
+                            "geometry", "beans.property", "util.converter", "beans.binding", "beans.value")
+                        .forEach(p->code.append("import javafx."+p+".*;\n"));
+                    Stream.of("plock.math", "java.io", "java.util", "java.util.stream",
+                            "java.util.concurrent.atomic", "java.text", "java.util.function")
+                        .forEach(p->code.append("import "+p+".*;\n"));
                     code.append("public class DynamicSupplier implements java.util.function.Supplier<Node> {\n");
                     code.append("  public Node get() {\n");
                     code.append(sourceCode.getText());

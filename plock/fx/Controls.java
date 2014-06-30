@@ -12,14 +12,15 @@ import javafx.beans.value.ChangeListener;
 
 public class Controls {
     public static class DoubleTextField extends TextField {
-        private DoubleProperty val; 
+        private DoubleProperty val = new SimpleDoubleProperty();
+        private IntegerProperty numFractionDigits = new SimpleIntegerProperty(0);
+        private IntegerProperty shift = new SimpleIntegerProperty();
         private NumberFormat format = NumberFormat.getInstance();
-        public DoubleTextField(DoubleProperty prop, int numFractionDigits, int shift) {
-            val=prop;
+        public DoubleTextField() {
             setText("0");
             setAlignment(Pos.CENTER_RIGHT);
             getProperties().put("value", val);
-            format.setMaximumFractionDigits(numFractionDigits);
+            format.setMaximumFractionDigits(numFractionDigits.get());
             format.setGroupingUsed(false);
             textProperty().bindBidirectional(val, new StringConverter<Number>() {
                 public Number fromString(String str) {
@@ -27,15 +28,25 @@ public class Controls {
                         return 0.0;
                     }
                     try {
-                        return format.parse(str).doubleValue()*Math.pow(10,-shift);
+                        return format.parse(str).doubleValue()*Math.pow(10,-shift.get());
                     } catch (ParseException e) {
                         System.out.println("doh on "+str+": "+e);
                         return 0.0;
                     }
                 }
-                public String toString(Number d) {return format.format(d.doubleValue()*Math.pow(10,shift));}
+                public String toString(Number d) {return format.format(d.doubleValue()*Math.pow(10,shift.get()));}
             });                   
         } 
+        public DoubleProperty valProperty() {return val;}
+        public IntegerProperty shiftProperty() {return shift;}
+        public IntegerProperty numFractionDigitsProperty() {return numFractionDigits;}
+        public int getShift() {return shift.get();}
+        public int getNumFractionDigits() {return numFractionDigits.get();}
+        public double getVal() {return val.get();}
+        public void setVal(int val) {this.val.set(val);}
+        public void setShift(int shift) {this.shift.set(shift);}
+        public void setNumFractionDigits(int digits) {this.numFractionDigits.set(digits);}
+
         @Override public void replaceText(int start, int end, String text) {
             // If the replaced text would end up being invalid, then simply
             // ignore this call!
@@ -71,7 +82,11 @@ public class Controls {
      * thanks for the help http://fxexperience.com/2012/02/restricting-input-on-a-textfield/
      */
     public static TextField createDoubleField(DoubleProperty prop, int numFractionDigits, int shift) {
-        return new DoubleTextField(prop, numFractionDigits, shift);
+        DoubleTextField f = new DoubleTextField();
+        f.valProperty().bindBidirectional(prop);
+        f.setNumFractionDigits(numFractionDigits);
+        f.setShift(shift);
+        return f;
     }
 }
 

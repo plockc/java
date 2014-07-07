@@ -48,6 +48,8 @@ public class Math {
         // same sign, get abs values of each, the diff of that, then abs value of result
         if (copySign(fs,t) == fs && abs(abs(fs)-abs(t)) <=e) {return s;}
 
+        // either we're working with infinity, or the increment is not creating a change in function, won't be able
+        // to solve
         if (right == fs || s == Double.NEGATIVE_INFINITY || s == Double.POSITIVE_INFINITY) {return Double.NaN;}
 
         // so t is in between f(s) and f(s+inc), recurse checking if falls in left or right

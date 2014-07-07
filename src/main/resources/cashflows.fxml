@@ -1,6 +1,12 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
+<?import javafx.beans.property.SimpleListProperty?>
+<?import javafx.collections.*?>
+
 <BorderPane fx:controller="alpha.CashFlowsController" xmlns:fx="http://javafx.com/fxml">
+    <fx:define>
+        <FXCollections fx:factory="observableArrayList" fx:id="accountsInCashFlow"/>
+    </fx:define>
     <top>
         <BorderPane>
             <center>
@@ -10,15 +16,6 @@
         </BorderPane>
     </top>
     <center>
-        <Accordion fx:id="accountsAccordion">
-            <panes>
-                <TitledPane text="First">
-                    <alpha.AccountController fx:id="accountOne"/>
-                </TitledPane>
-                <TitledPane text="Second">
-                    <alpha.AccountController fx:id="accountTwo"/>
-                </TitledPane>
-            </panes>
-        </Accordion>
+        <Accordion fx:id="accountsAccordion"/>
     </center>
 </BorderPane>

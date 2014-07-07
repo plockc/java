@@ -3,8 +3,10 @@ package alpha;
 import java.io.*;
 import java.util.*;
 
+import javafx.scene.Node;
 import javafx.scene.control.*;
 import javafx.scene.input.*;
+import javafx.scene.layout.BorderPane;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableMap;
 import javafx.fxml.*;
@@ -16,8 +18,7 @@ public class GuiController {
     private static ObservableMap<String,AccountController> accounts = FXCollections.observableHashMap();
     @FXML TextArea sourceCode;
     @FXML TextArea console;
-    @FXML AccountController accountOne;
-    @FXML AccountController accountTwo;
+    @FXML CashFlowsController cashFlowsController;
 
     @FXML public void sourceChanged(KeyEvent event) {
         ByteArrayOutputStream consoleBytes = new ByteArrayOutputStream();
@@ -29,7 +30,7 @@ public class GuiController {
             Template tpl = null;
             tpl = new Template().addImports(Arrays.asList("plock.math.Finance"))
                 .setSource(sourceCode.getText().toCharArray());
-            System.out.println(tpl.render(accountOne.getFinance().getValues()));
+            System.out.println(tpl.render(((CashFlowsController)cashFlowsController).getFinances()));
         } catch (Exception e) {
             System.out.println(e.getMessage());
             e.printStackTrace(consolePrinter);

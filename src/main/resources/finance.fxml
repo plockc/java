@@ -11,7 +11,7 @@
                     <items>
                         <TextArea fx:id="sourceCode" onKeyTyped="#sourceChanged" onKeyPressed="#sourceChanged"
                             onKeyReleased="#sourceChanged" promptText="This is a template with bound values"/>
-                        <fx:include source="cashflows.fxml"/>
+                        <fx:include fx:id="cashFlows" source="cashflows.fxml"/>
                     </items>
                 </SplitPane> 
                 <TextArea fx:id="console">

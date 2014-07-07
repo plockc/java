@@ -127,6 +127,7 @@ public class Finance implements Cloneable {
         throw new IllegalArgumentException("cannot get "+p+" as a double");
     }    
     public Object get(String p) {return get(TmvParams.valueOf(p));}
+    public Property getProperty(String p) {return getProperty(TmvParams.valueOf(p));}
     public Property getProperty(TmvParams p) {
         switch (p) {
             case pv: return pv;

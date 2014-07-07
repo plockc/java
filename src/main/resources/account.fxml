@@ -20,21 +20,31 @@
     </fx:define>
 
     <Label text="Future Value" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.columnSpan="2"/>
-    <plock.fx.Controls.DoubleTextField disable="true" style="-fx-background-color: lightgrey; -fx-opacity: 1" GridPane.columnIndex="2" GridPane.rowIndex="$row">
+    <fx:script>row.set(row.get()+1);</fx:script>
+    <plock.fx.Controls.DoubleTextField fx:id="fvField" disable="true" style="-fx-background-color: lightgrey; -fx-opacity: 1" GridPane.columnIndex="2" GridPane.rowIndex="$row">
         <properties paramName="fv"/>
     </plock.fx.Controls.DoubleTextField>
-
+    <HBox GridPane.columnIndex="0" GridPane.rowIndex="$row">
+        <ChoiceBox fx:id="whichPvForFv" visible="false"/>
+        <Button fx:id="cancelFVImport" text="X" visible="false"/>
+    </HBox>
+    
     <fx:script>row.set(row.get()+1);</fx:script>
 
     <Label text="Present Value" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.columnSpan="2"/>
-    <plock.fx.Controls.DoubleTextField GridPane.columnIndex="2" GridPane.rowIndex="$row">
+    <fx:script>row.set(row.get()+1);</fx:script>
+    <plock.fx.Controls.DoubleTextField fx:id="pvField" GridPane.columnIndex="2" GridPane.rowIndex="$row">
         <properties paramName="pv"/>
     </plock.fx.Controls.DoubleTextField>
+    <HBox GridPane.columnIndex="0" GridPane.rowIndex="$row">
+        <ChoiceBox fx:id="whichFvForPv" visible="false"/>
+        <Button fx:id="cancelPVImport" visible="false" text="X"/>
+    </HBox>
 
     <fx:script>row.set(row.get()+1);</fx:script>
 
     <Label text="Annual Effective Rate" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.columnSpan="2"/>
-    <plock.fx.Controls.DoubleTextField shift="2" GridPane.columnIndex="2" GridPane.rowIndex="$row">
+    <plock.fx.Controls.DoubleTextField fx:id="rField" shift="2" GridPane.columnIndex="2" GridPane.rowIndex="$row">
         <properties paramName="r"/>
     </plock.fx.Controls.DoubleTextField>
     <Label text="\%" GridPane.columnIndex="3" GridPane.rowIndex="$row"/>
@@ -42,7 +52,7 @@
     <fx:script>row.set(row.get()+1);</fx:script>
 
     <Label text="Number of Years" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.columnSpan="2"/>
-    <plock.fx.Controls.DoubleTextField GridPane.columnIndex="2" GridPane.rowIndex="$row">
+    <plock.fx.Controls.DoubleTextField fx:id="nField" GridPane.columnIndex="2" GridPane.rowIndex="$row">
         <properties paramName="n"/>
     </plock.fx.Controls.DoubleTextField>
 
@@ -50,21 +60,21 @@
 
     <Label text="Incoming" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.rowSpan="2"/>
     <Label text="Monthly" GridPane.columnIndex="1" GridPane.rowIndex="$row" GridPane.halignment="RIGHT"/>
-    <plock.fx.Controls.DoubleTextField GridPane.columnIndex="2" GridPane.rowIndex="$row">
+    <plock.fx.Controls.DoubleTextField fx:id="pmtField" GridPane.columnIndex="2" GridPane.rowIndex="$row">
         <properties paramName="pmt"/>
     </plock.fx.Controls.DoubleTextField>
 
     <fx:script>row.set(row.get()+1);</fx:script>
 
     <Label text="Yearly" GridPane.columnIndex="1" GridPane.rowIndex="$row" GridPane.halignment="RIGHT"/>
-    <plock.fx.Controls.DoubleTextField GridPane.columnIndex="2" GridPane.rowIndex="$row">
+    <plock.fx.Controls.DoubleTextField fx:id="compPmtField" GridPane.columnIndex="2" GridPane.rowIndex="$row">
         <properties paramName="comp_pmt"/>
     </plock.fx.Controls.DoubleTextField>
 
     <fx:script>row.set(row.get()+1);</fx:script>
 
     <Label text="Annual Incoming Growth" GridPane.columnIndex="0" GridPane.rowIndex="$row" GridPane.columnSpan="2"/>
-    <plock.fx.Controls.DoubleTextField shift="2" GridPane.columnIndex="2" GridPane.rowIndex="$row">
+    <plock.fx.Controls.DoubleTextField fx:id="gField" shift="2" GridPane.columnIndex="2" GridPane.rowIndex="$row">
         <properties paramName="g"/>
     </plock.fx.Controls.DoubleTextField>
     <Label text="\%" GridPane.columnIndex="3" GridPane.rowIndex="$row"/>

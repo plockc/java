@@ -26,6 +26,8 @@ public class AccountController extends GridPane {
     @FXML private ChoiceBox<AccountController> whichPvForFv;
     @FXML private ChoiceBox<AccountController> whichFvForPv;
     @FXML private Button cancelPVImport, cancelFVImport;
+    private SimpleListProperty<AccountController> finances = new SimpleListProperty<AccountController>();
+    
     private Map<String,String> labelToParam = new HashMap<String,String>();
 //    private Set<AccountController> fvSubscribers = new CopyOnWriteArraySet<AccountController>();
 //    private Set<AccountController> pvSubscribers = new CopyOnWriteArraySet<AccountController>();
@@ -59,12 +61,8 @@ public class AccountController extends GridPane {
     public void setAccountsList(ObservableList<AccountController> accountNames) {
         whichPvForFv.setItems(accountNames);
         whichFvForPv.setItems(accountNames);
-        whichPvForFv.setVisible(!accountNames.isEmpty() && !finance.getSolveFor().equals(TmvParams.fv));
-        whichFvForPv.setVisible(!accountNames.isEmpty() && !finance.getSolveFor().equals(TmvParams.pv));
-        accountNames.addListener(new ListChangeListener() {public void onChanged(ListChangeListener.Change e) {
-            whichPvForFv.setVisible(!e.getList().isEmpty() && !finance.getSolveFor().equals(TmvParams.fv));
-            whichFvForPv.setVisible(!e.getList().isEmpty() && !finance.getSolveFor().equals(TmvParams.pv));
-        }});
+        
+        finances.set(accountNames);
     }
     public String toString() {return name.get();}
     public void initialize() {
@@ -102,8 +100,6 @@ public class AccountController extends GridPane {
             finance.solveFor(newVal);
 
             boolean hasOtherAccounts = !whichPvForFv.getItems().isEmpty();
-            whichPvForFv.setVisible(hasOtherAccounts && !finance.getSolveFor().equals(TmvParams.fv));
-            whichFvForPv.setVisible(hasOtherAccounts && !finance.getSolveFor().equals(TmvParams.pv));
 
         	oldField.valProperty().bindBidirectional(finance.getProperty(TmvParams.valueOf(oldVal)));
             newField.valProperty().bind(finance.getProperty(finance.getSolveFor()));
@@ -143,16 +139,9 @@ public class AccountController extends GridPane {
             }
         });
     
-        ChangeListener cancelVisListener = (obs,oldVal,newVal) -> {
-            cancelPVImport.setVisible(whichFvForPv.getValue() != null 
-                 && !TmvParams.pv.toString().equals(solveFor.getValue()));
-            cancelFVImport.setVisible(whichPvForFv.getValue() != null
-                 && !TmvParams.fv.toString().equals(solveFor.getValue()));
-        }; 
-        solveFor.valueProperty().addListener(cancelVisListener);
-        whichPvForFv.valueProperty().addListener(cancelVisListener);
-        whichFvForPv.valueProperty().addListener(cancelVisListener);
-
+        whichPvForFv.visibleProperty().bind(finances.emptyProperty().not().and(finance.solveForProperty().isNotEqualTo(TmvParams.fv)));
+        whichFvForPv.visibleProperty().bind(finances.emptyProperty().not().and(finance.solveForProperty().isNotEqualTo(TmvParams.pv)));
+        
         cancelPVImport.setOnAction(e -> whichFvForPv.setValue(null));
         cancelFVImport.setOnAction(e -> whichPvForFv.setValue(null));
     }

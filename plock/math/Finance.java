@@ -30,6 +30,8 @@ public class Finance implements Cloneable {
     private final SimpleDoubleProperty n = new SimpleDoubleProperty();
     private final SimpleIntegerProperty comp = new SimpleIntegerProperty(1);
     private final SimpleBooleanProperty due = new SimpleBooleanProperty();
+    private final SimpleObjectProperty<TmvParams> solveForProp = new SimpleObjectProperty<TmvParams>(TmvParams.fv);
+    
     /** this is the rate that will be compounded "comp" times across a single period */
     private final DoubleBinding comp_r = new DoubleBinding() {
         {Stream.of((ObservableValue)r,comp).forEach(obs->obs.addListener((obj,oldVal,newVal)->invalidate()));}
@@ -63,6 +65,16 @@ public class Finance implements Cloneable {
         fv.bind(computedSolution);
         configureSolutionInvalidation();
         //System.out.println("created without map: "+getValues());
+        solveForProp.addListener((obs, oldSolveFor, newSolveFor) -> {
+	    	getProperty(oldSolveFor).unbind(); // this unbinds the solve() method from the old solution property
+	    	// we want to invalidate solution when the old solveFor changes now, and don't invalidate when solution changes
+	    	getProperty(newSolveFor).removeListener(solutionInvalidationListener);
+	    	getProperty(oldSolveFor).addListener(solutionInvalidationListener);
+	
+	    	this.solveFor = newSolveFor;
+	        getProperty(solveFor).bind(computedSolution);
+	        computedSolution.invalidate();
+        });
     }
     public Finance(Map<String,Object> init, TmvParams solveFor) {
         Stream.of(TmvParams.pv,TmvParams.r,TmvParams.g,TmvParams.n,TmvParams.comp_pmt,TmvParams.pmt,TmvParams.comp)
@@ -164,21 +176,15 @@ public class Finance implements Cloneable {
     }
 
     public TmvParams getSolveFor() {return solveFor;}
+    public SimpleObjectProperty<TmvParams> solveForProperty() {return solveForProp;}
     public final Finance solveFor(String solveFor) {
         return solveFor(TmvParams.valueOf(solveFor));
     }
     public Finance solveFor(TmvParams solveFor) {
-    	TmvParams oldSolveFor = this.solveFor;
-    	getProperty(oldSolveFor).unbind(); // this unbinds the solve() method from the old solution property
-    	// we want to invalidate solution when the old solveFor changes now, and don't invalidate when solution changes
-    	getProperty(solveFor).removeListener(solutionInvalidationListener);
-    	getProperty(oldSolveFor).addListener(solutionInvalidationListener);
-
-    	this.solveFor = solveFor;
-        getProperty(solveFor).bind(computedSolution);
-        computedSolution.invalidate();
+    	solveForProp.set(solveFor);
         return this;
     }
+    
     /** Annuity formulas
         http://www.tvmcalcs.com/tvm/formulas/regular_annuity_formulas
         Annuity due calcs at 

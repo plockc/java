@@ -14,7 +14,7 @@ public class FinanceTest {
         f(new Finance().n(5).g(.05).r(.03).pmt(2000), 11700.75),
         f(new Finance().n(5).r(.05).pmt(1000), 5525.63),
         f(new Finance().n(10).r(.05).pv(2000), 3257.789253554884),
-        f(new Finance().n(3).comp(2).g(.02).r(.08).pmt(200).pv(2000), 3868.742027011306));
+        f(new Finance().n(3).comp(2).g(.02).r(.08).pmt(200).pv(2000), 3868.742027011306)); 
     private Map<String,Object> f(Finance f, Double val) {
         Map<String,Object> values = f.getValues();
         values.put("fv", val);
@@ -51,6 +51,16 @@ public class FinanceTest {
         fs.stream().filter(f->(Double)f.get("pmt")!=0.0 && (Double)f.get("n") != 0.0).forEach(f->{
             assertEquals((Double)f.get("g"), new Finance(f, g).getSolution(), .0001);
         });
+    }
+    @Test public void testChangeToR() {
+        Finance f= new Finance().comp(12).pv(123).r(.02).n(3).pmt(123);
+        System.out.println("pmt: "+f.get("pmt"));
+        f.g(.02);
+        System.out.println("pmt: "+f.get("pmt"));
+        f.solveFor(r);
+        System.out.println("OK");
+        System.out.println("pmt: "+f.get("pmt"));
+        assertEquals(123, new Finance().comp(12).pv(123).r(.02).n(3).pmt(123).g(.02).solveFor(r).getSolution());
     }
 }
 

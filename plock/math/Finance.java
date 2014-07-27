@@ -36,7 +36,7 @@ public class Finance implements Cloneable {
     private final DoubleBinding comp_r = new DoubleBinding() {
         {Stream.of((ObservableValue)r,comp).forEach(obs->obs.addListener((obj,oldVal,newVal)->invalidate()));}
         @Override protected double computeValue() {
-            //System.out.println("calc comp_r from r:"+r.get()+" and comp:" +comp.get());
+            //System.out.println("calc comp_r from r:"+r+","+r.get()+" and comp:" +comp.get());
             if (comp.get() == 1) {return r.get();}
             return pow(1+r.get(),1.0/comp.get())-1; // the monthly rate from the given effective annual rate
         }
@@ -44,7 +44,7 @@ public class Finance implements Cloneable {
     /** this is all the payments together for a whole period with compounded interest on the payments */
     private final DoubleProperty comp_pmt = DoublePropertyFunctionWrapper.bidirectionalBind(pmt,
         payment -> {
-            //System.out.println("comp_pmt is recalculated based on pmt "+payment+" with comp: "+comp.get());
+            //System.out.println("comp_pmt is recalculated based on pmt "+payment+" with comp: "+comp.get()+" comp_r: "+comp_r.get());
             if (comp.get() == 1) {return payment;}
             if (comp_r.get() == 0.0) {
                 return comp.get()*payment;
@@ -65,16 +65,6 @@ public class Finance implements Cloneable {
         fv.bind(computedSolution);
         configureSolutionInvalidation();
         //System.out.println("created without map: "+getValues());
-        solveForProp.addListener((obs, oldSolveFor, newSolveFor) -> {
-	    	getProperty(oldSolveFor).unbind(); // this unbinds the solve() method from the old solution property
-	    	// we want to invalidate solution when the old solveFor changes now, and don't invalidate when solution changes
-	    	getProperty(newSolveFor).removeListener(solutionInvalidationListener);
-	    	getProperty(oldSolveFor).addListener(solutionInvalidationListener);
-	
-	    	this.solveFor = newSolveFor;
-	        getProperty(solveFor).bind(computedSolution);
-	        computedSolution.invalidate();
-        });
     }
     public Finance(Map<String,Object> init, TmvParams solveFor) {
         Stream.of(TmvParams.pv,TmvParams.r,TmvParams.g,TmvParams.n,TmvParams.comp_pmt,TmvParams.pmt,TmvParams.comp)
@@ -85,9 +75,9 @@ public class Finance implements Cloneable {
             set("fv", (Double)init.get("fv"));
         	this.solveFor = solveFor;
         }
+        computedSolution.invalidate();
         getProperty(solveFor).bind(computedSolution);
         configureSolutionInvalidation();
-        computedSolution.invalidate();
         //System.out.println("Created with map: "+this.getValues()+" from: "+init);
     }
 
@@ -96,9 +86,19 @@ public class Finance implements Cloneable {
     };
     @SuppressWarnings("unchecked")
 	private void configureSolutionInvalidation() {
-    	Stream.of(TmvParams.pv, TmvParams.fv, TmvParams.pmt, TmvParams.r, 
+    	Stream.of(TmvParams.pv, TmvParams.fv, TmvParams.pmt, TmvParams.comp_pmt, TmvParams.r,
                 TmvParams.g, TmvParams.n, TmvParams.comp).filter(p->!solveFor.equals(p))
                     .forEach(p->getProperty(p).addListener(solutionInvalidationListener));
+        solveForProp.addListener((obs, oldSolveFor, newSolveFor) -> {
+	    	getProperty(oldSolveFor).unbind(); // this unbinds the solve() method from the old solution property
+	    	// we want to invalidate solution when the old solveFor changes now, and don't invalidate when solution changes
+	    	getProperty(newSolveFor).removeListener(solutionInvalidationListener);
+	    	getProperty(oldSolveFor).addListener(solutionInvalidationListener);
+	
+	    	this.solveFor = newSolveFor;
+	        computedSolution.invalidate(); 
+	        getProperty(solveFor).bind(computedSolution);
+        });
     }
 
     public String toString() {return "{fv:"+fv+",pv:"+pv+",r:"+r+",comp_r:"+comp_r+",pmt:"+pmt
@@ -115,7 +115,10 @@ public class Finance implements Cloneable {
     public Finance pmt(double payment) {this.pmt.set(payment); return this;}
     public Finance g(double g) {this.g.set(g); return this;}
     public Finance n(double n) {this.n.set(n); return this;}
-    public Finance comp(int comp) { this.comp.set(comp); return this; }
+    public Finance comp(int comp) { 
+        if (comp==0) {throw new IllegalArgumentException("must be > 0");}
+        this.comp.set(comp); return this; 
+    }
     public Finance due(boolean due) {this.due.set(due); return this;}
 
     public static final Finance create() {return new Finance();}
@@ -198,7 +201,7 @@ public class Finance implements Cloneable {
             case fv:
                 double rateFactor = pow(1+r.get(),n.get());
                 double basicInterest = pv.get() * rateFactor; 
-                if (g.get()==r.get()) {
+                if (r.get()-g.get()==0) {
                     return basicInterest + comp_pmt.get()*n.get()*pow(1+r.get(),n.get()-1);
                 } else {
                     return basicInterest + comp_pmt.get()/(r.get()-g.get()) * (rateFactor - pow(1+g.get(),n.get()));
@@ -236,17 +239,24 @@ public class Finance implements Cloneable {
                 throw new IllegalArgumentException("not implemented for "+solveFor);
         }
         // didn't have a direct function, so we'll iterate to find a solution
-        double d = 
-         Math.iterateSolve(x->{
-        	Finance f = new Finance();
-        	Stream.of("pv","n","r","g","pmt","comp").filter(p->!solveFor.toString().equals(p)).forEach(p->{
-        		f.set(p, (Number)get(p));
-        	});
-            f.set(solveFor,x);
-            //System.out.println("setting "+solveFor+" to "+x+" and got "+f.getSolution());
-            return f.getSolution();
-        },fv.get(),0.0,.00000001,.000001);
-        return d;
+        try {
+            double d = 
+            Math.iterateSolve(x->{
+                Finance f = new Finance();
+                Stream.of("pv","n","r","g","pmt","comp").filter(p->!solveFor.toString().equals(p)).forEach(p->{
+                    f.set(p, (Number)get(p));
+                });
+                f.set(solveFor,x);
+                //System.out.println("setting "+solveFor+" to "+x+" and got "+f.getSolution());
+                return f.getSolution();
+            },fv.get(),0.0,.00000001,.00001);
+            return d;
+        } catch (IllegalArgumentException e) {
+                Stream.of("pv","n","r","g","pmt","comp","comp_pmt").filter(p->!solveFor.toString().equals(p)).forEach(p->{
+                    System.out.println("failed with "+p+": "+get(p));
+                });
+            throw e;
+        }
     } 
     public static final double compoundInterestRate(double presentValue, double futureValue, double periods) {
         return pow(futureValue/presentValue, 1/periods)-1;

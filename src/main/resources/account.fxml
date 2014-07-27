@@ -14,7 +14,8 @@
 <fx:root type="javafx.scene.layout.GridPane" xmlns:fx="http://javafx.com/fxml" alignment="CENTER" hgap="10" vgap="12">
     <padding><Insets top="10" right="10" bottom="10" left="10"/></padding>
     <fx:define>
-        <HashMap fx:id="paramToLabel" fv="Future Value" pv="Present Value"/>
+        <HashMap fx:id="paramToLabel" fv="Future Value" pv="Present Value" n="Number of Years"
+            r="Rate of Return" g="Payment Annual Growth" pmt="Payment"/>
         <AtomicInteger fx:id="row"/>
         <plock.math.Finance fx:id="finance"/>
     </fx:define>
@@ -86,6 +87,10 @@
         <items><FXCollections fx:factory="observableArrayList">
             <String fx:value="fv"/>
             <String fx:value="pv"/>
+            <String fx:value="r"/>
+            <String fx:value="n"/>
+            <String fx:value="pmt"/>
+            <String fx:value="g"/>
         </FXCollections></items>
         <value><String fx:value="fv"/></value>
     </ChoiceBox>

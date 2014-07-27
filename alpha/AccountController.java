@@ -4,6 +4,8 @@ import java.io.*;
 import java.nio.file.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.function.Function;
+import java.util.stream.Stream;
 import java.text.*;
 
 import javafx.scene.control.*;
@@ -33,13 +35,7 @@ public class AccountController extends GridPane {
 //    private Set<AccountController> pvSubscribers = new CopyOnWriteArraySet<AccountController>();
     private StringProperty name = new SimpleStringProperty("Account");
     private Map<String,TextField> paramToField = new HashMap<String,TextField>();
-    @FXML private TextField fvField, pvField, rField, nField, pmtField, cmpPmtField, gField;
-
-    private static NumberFormat format = NumberFormat.getIntegerInstance();
-    static {
-        format.setGroupingUsed(false);
-        format.setMaximumFractionDigits(2);
-    }
+    @FXML private TextField fvField, pvField, rField, nField, pmtField, compPmtField, gField;
 
     public AccountController() {
         FXMLLoader fxmlLoader = new FXMLLoader();
@@ -72,34 +68,24 @@ public class AccountController extends GridPane {
             public String fromString(String paramName) { return labelToParam.get(paramName); }
         });
         solveFor.getSelectionModel().selectedItemProperty().addListener( (obs, oldVal, newVal) -> {
-        	System.out.println("Changing solveFor");
         	DoubleTextField oldField = (DoubleTextField)lookupAll(".text-field").stream()
         			.filter(field->oldVal.equals(field.getProperties().get("paramName"))).findFirst().get();
         	DoubleTextField newField = (DoubleTextField)lookupAll(".text-field").stream()
         			.filter(field->newVal.equals(field.getProperties().get("paramName"))).findFirst().get();
-        	// new field is un-editable, old field becomes editable
-        	oldField.setDisable(false);
             oldField.setStyle("");
-            newField.setDisable(true);
+            if (oldVal.equals("comp_pmt")) {pmtField.setStyle("");}
+            if (oldVal.equals("pmt")) {compPmtField.setStyle("");}
             newField.setStyle("-fx-background-color: lightgrey; -fx-opacity: 1;");
             if (newVal.equals("comp_pmt")) {
-            	TextField tf = ((TextField)lookupAll(".text-field").stream()
-            		.filter(field->"pmt".equals(field.getProperties().get("paramName"))).findFirst().get());
-                tf.setDisable(true);
-                tf.setStyle("-fx-background-color: lightgrey; -fx-opacity: 1;");
+            	pmtField.setStyle("-fx-background-color: lightgrey; -fx-opacity: 1;");
             }
             if (newVal.equals("pmt")) {
-            	TextField tf = ((TextField)lookupAll(".text-field").stream()
-            		.filter(field->"comp_pmt".equals(field.getProperties().get("paramName"))).findFirst().get());
-                tf.setDisable(true);
-                tf.setStyle("-fx-background-color: lightgrey; -fx-opacity: 1;");
+            	compPmtField.setStyle("-fx-background-color: lightgrey; -fx-opacity: 1;");
             }
             // unbind all the old stuff before changing solveFor and rebinding the new stuff
             oldField.valProperty().unbind();
             newField.valProperty().unbindBidirectional(finance.getProperty(TmvParams.valueOf(newVal)));
             finance.solveFor(newVal);
-
-            boolean hasOtherAccounts = !whichPvForFv.getItems().isEmpty();
 
         	oldField.valProperty().bindBidirectional(finance.getProperty(TmvParams.valueOf(oldVal)));
             newField.valProperty().bind(finance.getProperty(finance.getSolveFor()));
@@ -108,9 +94,7 @@ public class AccountController extends GridPane {
             DoubleTextField tf = (DoubleTextField)node;
             String paramName = (String)tf.getProperties().get("paramName");
             TmvParams fieldParam = TmvParams.valueOf(paramName);
-        	finance.getProperty(fieldParam).addListener((obj,oldVal,newVal) -> {System.out.println("finance "+paramName+" updated to "+newVal);});
             if (!fieldParam.equals(finance.getSolveFor())) {
-            	tf.valProperty().addListener((obj,oldVal,newVal) -> {System.out.println("text double updated to "+newVal);});
             	tf.valProperty().bindBidirectional(finance.getProperty(fieldParam));
             } else {
             	tf.valProperty().bind(finance.getProperty(finance.getSolveFor()));
@@ -119,29 +103,45 @@ public class AccountController extends GridPane {
         whichPvForFv.valueProperty().addListener((obs, oldPv, newPv) -> {
             if (newPv == null) {
                 finance.getProperty("fv").unbind();
-                fvField.setDisable(false);
                 fvField.setStyle("");
             } else {
                 finance.getProperty("fv").bind(newPv.finance.getProperty("pv"));
-                fvField.setDisable(true);
                 fvField.setStyle("-fx-background-color: lightgrey; -fx-opacity: 1;");
             }
         });
         whichFvForPv.valueProperty().addListener((obs, oldFv, newFv) -> {
             if (newFv == null) {
                 finance.getProperty("pv").unbind();
-                pvField.setDisable(false);
                 pvField.setStyle("");
             } else {
-                pvField.setDisable(true);
                 pvField.setStyle("-fx-background-color: lightgrey; -fx-opacity: 1;");
                 finance.getProperty("pv").bind(newFv.finance.getProperty("fv"));
             }
         });
     
-        whichPvForFv.visibleProperty().bind(finances.emptyProperty().not().and(finance.solveForProperty().isNotEqualTo(TmvParams.fv)));
-        whichFvForPv.visibleProperty().bind(finances.emptyProperty().not().and(finance.solveForProperty().isNotEqualTo(TmvParams.pv)));
-        
+        // if fxml supported booleans for expression binding, then we would not have to bind here
+        // basically visible when there are other finances, and we're not solving for the same value
+        BooleanExpression notSolvingFv = finance.solveForProperty().isNotEqualTo(TmvParams.fv);
+        BooleanExpression notSolvingPv = finance.solveForProperty().isNotEqualTo(TmvParams.pv);
+        whichPvForFv.visibleProperty().bind(finances.emptyProperty().not().and(notSolvingFv));
+        whichFvForPv.visibleProperty().bind(finances.emptyProperty().not().and(notSolvingPv));
+        // TODO Fix to choice box not null
+        cancelPVImport.visibleProperty().bind(whichFvForPv.valueProperty().isNotNull().and(notSolvingPv));
+        cancelFVImport.visibleProperty().bind(whichPvForFv.valueProperty().isNotNull().and(notSolvingFv));
+
+        Function<TextField,BooleanBinding> matchingSolveFor = f -> {
+            ObjectProperty solveFor = finance.solveForProperty();
+        	return solveFor.isEqualTo(TmvParams.valueOf((String) f.getProperties().get("paramName")));
+        };
+        // block entry to fields when they are being solved for, when they are imported values, and tie comp_pmt and pmt together
+        Stream.of(fvField, pvField, rField, nField, pmtField, compPmtField, gField).forEach(f->{
+        	BooleanExpression disable = matchingSolveFor.apply(f);
+        	if (f == fvField) {disable = disable.or(whichPvForFv.valueProperty().isNotNull());}
+        	else if (f == pvField) {disable = disable.or(whichFvForPv.valueProperty().isNotNull());}
+        	else if (f == compPmtField) {disable = disable.or(pmtField.disableProperty());}
+        	f.disableProperty().bind(disable);
+        });
+
         cancelPVImport.setOnAction(e -> whichFvForPv.setValue(null));
         cancelFVImport.setOnAction(e -> whichPvForFv.setValue(null));
     }

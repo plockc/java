@@ -18,7 +18,9 @@ public class Math {
         //System.out.println("binary expand target "+t+" and err: "+e+" with x: "+s+" inc: "+inc+" f(x):"+fs+" f(x+inc):"+right);
 
         if (Double.isNaN(fs) || Double.isNaN(right)) {
-            throw new IllegalArgumentException("cannot find a valid value for function");
+            String message ="cannot find a valid value for function, target: "+t+" checking against "+right;
+            message += " and "+fs+" currently: "+s+" and inc: "+inc;
+            throw new IllegalArgumentException(message);
         }
         if (abs(fs-t) < e) {return s;}
         if (abs(right-t) < e) {return s+inc;}
@@ -72,7 +74,6 @@ public class Math {
         System.out.println("answer: "+iterateSolve(f, 0, 0, .00000000001, .000000001));
         // this one should fail
         System.out.println("answer: "+iterateSolve(f, -33.33, 0, .00000000001, .000000001));
-
     }
 }
  

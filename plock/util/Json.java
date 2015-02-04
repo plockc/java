@@ -88,7 +88,7 @@ public class Json {
         Child keyChild = toString(entry.getKey(), seen, indent, cols-2);
         keyChild.formatted = newLinePattern.matcher(keyChild.formatted).replaceAll("\n  ");
 
-        Child valueChild = toString(entry.getValue(), seen, indent, cols-2);
+        Child valueChild = toString(entry.getValue(), seen, indent, cols-4);
         valueChild.formatted = newLinePattern.matcher(valueChild.formatted).replaceAll("\n  ");
 
         maxKeyLength = Math.max(keyChild.length, maxKeyLength);
@@ -113,7 +113,7 @@ public class Json {
         return new Child("{"+formatted.formatted+"}", 2+formatted.length);
     }
     // check if we can do key+value on a single line
-    if (2+maxKeyLength+maxValueLength <= cols) {
+    if (3+maxKeyLength+maxValueLength <= cols) {
         List<Child> entries = new ArrayList<Child>(keys.size());
         for (int i=0; i<keys.size(); i++) {
             Child key = keys.get(i);

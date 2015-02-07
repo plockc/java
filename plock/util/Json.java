@@ -114,7 +114,12 @@ public class Json {
     int maxValueLength = 0;
     int sumValueLength = 0;
     for (Map.Entry entry : ((Map<Object,Object>)map).entrySet()) {
-        Child keyChild = toString(entry.getKey(), seen, indent, cols-2);
+        if (!(entry.getKey() instanceof CharSequence)) {
+            String msg = "json objects (maps) must have a name for a key, not a value: "+entry.getValue();
+            throw new IllegalArgumentException(msg);
+        }
+        String name = entry.getKey().toString();
+        Child keyChild = new Child(name, name.length());
         keyChild.formatted = newLinePattern.matcher(keyChild.formatted).replaceAll("\n  ");
 
         Child valueChild = toString(entry.getValue(), seen, indent, cols-4);
@@ -213,9 +218,7 @@ public class Json {
   	System.out.println(toString(Arrays.asList(3, Arrays.asList("Hello", "you", "cruel", "World!"),map,Arrays.asList("!", 24))));
     map = new HashMap() {{put("foo", "bar"); put("biz", "baz"); put("this is a super long key", "this is a super long value");}};
   	System.out.println(toString(Arrays.asList(3, Arrays.asList("Hello", "you", "cruel", "World!"),map,Arrays.asList("!", 24))));
-    map = new HashMap() {{put(new HashMap(){{put("sk1", "sV1"); put("sK2", "sV2");}}, "v1"); put("k2", "v2");}};
   	System.out.println(toString(Arrays.asList(3, Arrays.asList("Hello", "you", "cruel", "World!"),map,Arrays.asList("!", 24))));
-    map = new HashMap() {{put(new HashMap(){{put("subK1", "subV1"); put("subK2", "subV2");}}, "v1"); put("key2", "val2");}};
   	System.out.println(toString(Arrays.asList(3, Arrays.asList("Hell\u2103", "you", "\uD83c\uDD32ruel", "World!"),map,Arrays.asList("!", 24))));
     System.out.println("23\u2103 and \uD83C\uDD32");
 

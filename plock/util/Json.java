@@ -39,20 +39,49 @@ public class Json {
         String formatted;
         int length;
     }
+    private static char[] hex = new char[] {'0','1','2','3','4','5','6','7','8','9','a','b','c','d','e','f'};
+    private static final String encodeString(String stringToEncode) {
+        StringBuilder encoded = new StringBuilder("\"");
+        char[] raw = stringToEncode.toCharArray();
+        for (int i=0; i<raw.length; i++) {
+            char c = raw[i];
+            if (c>31 && c<127) {
+                encoded.append(c);
+            } else {
+                encoded.append("\\u");
+                byte b = (byte) (c >>> 8);
+                encoded.append(hex[0x0f & (b>>>4)]);
+                encoded.append(hex[0x0f & b]);
+                b = (byte)(c&0xff); 
+                encoded.append(hex[0x0f & (b>>>4)]);
+                encoded.append(hex[0x0f & b]);
+            }
+        }
+        encoded.append('"');
+        return encoded.toString();
+    }
     private static final Child toString(final Object array, IdentityHashMap seen, int indent, int cols) {
+      if (array == null) {
+          return new Child("null", 4);
+      }
       if (array instanceof CharSequence) {
           // lengths is the sequence plus the two quotes
-		return new Child(RED+"\""+array+"\""+PLAIN, ((CharSequence)array).length()+2);
+		return new Child(RED+encodeString(array.toString())+PLAIN, ((CharSequence)array).length()+2);
       }
       if (array instanceof Number || array instanceof Boolean) {
+          if (array instanceof Double && ((Double)array) == Double.NaN 
+                  || array instanceof Float && ((Float)array) == Float.NaN) {
+              throw new IllegalArgumentException("cannot have NaN in Json");
+          }
+          
         String str = array.toString();
           return new Child(CYAN+str+PLAIN, str.length());
       }
       boolean isArray = array.getClass().isArray();
-      boolean isIterable = array instanceof Iterable;
-      boolean isMap = array instanceof Map;
+      boolean isIterable = !isArray && array instanceof Iterable;
+      boolean isMap = !isIterable && !isArray && array instanceof Map;
       if (!isArray && !isIterable && !isMap) {
-          String str = RED+"\""+array+"\""+PLAIN;
+          String str = RED+encodeString(array.toString())+PLAIN;
           return new Child(str, str.length());
       }
 		if (seen.containsKey(array)) {
@@ -187,7 +216,8 @@ public class Json {
     map = new HashMap() {{put(new HashMap(){{put("sk1", "sV1"); put("sK2", "sV2");}}, "v1"); put("k2", "v2");}};
   	System.out.println(toString(Arrays.asList(3, Arrays.asList("Hello", "you", "cruel", "World!"),map,Arrays.asList("!", 24))));
     map = new HashMap() {{put(new HashMap(){{put("subK1", "subV1"); put("subK2", "subV2");}}, "v1"); put("key2", "val2");}};
-  	System.out.println(toString(Arrays.asList(3, Arrays.asList("Hello", "you", "cruel", "World!"),map,Arrays.asList("!", 24))));
+  	System.out.println(toString(Arrays.asList(3, Arrays.asList("Hell\u2103", "you", "\uD83c\uDD32ruel", "World!"),map,Arrays.asList("!", 24))));
+    System.out.println("23\u2103 and \uD83C\uDD32");
 
   }
 }

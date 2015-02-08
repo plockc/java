@@ -118,8 +118,7 @@ public class Json {
             String msg = "json objects (maps) must have a name for a key, not a value: "+entry.getValue();
             throw new IllegalArgumentException(msg);
         }
-        String name = entry.getKey().toString();
-        Child keyChild = new Child(name, name.length());
+        Child keyChild = toString(entry.getKey(), seen, indent, cols-2);
         keyChild.formatted = newLinePattern.matcher(keyChild.formatted).replaceAll("\n  ");
 
         Child valueChild = toString(entry.getValue(), seen, indent, cols-4);

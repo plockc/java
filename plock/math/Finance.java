@@ -34,6 +34,7 @@ public class Finance implements Cloneable {
     
     /** this is the rate that will be compounded "comp" times across a single period */
     private final DoubleBinding comp_r = new DoubleBinding() {
+        // if there is a change to r or the compounding rate, then we'll invalidate so comp_r gets recalculated
         {Stream.of((ObservableValue)r,comp).forEach(obs->obs.addListener((obj,oldVal,newVal)->invalidate()));}
         @Override protected double computeValue() {
             //System.out.println("calc comp_r from r:"+r+","+r.get()+" and comp:" +comp.get());
@@ -81,11 +82,10 @@ public class Finance implements Cloneable {
         //System.out.println("Created with map: "+this.getValues()+" from: "+init);
     }
 
-    private ChangeListener<?> solutionInvalidationListener = (bean,oldVal,newVal) -> {
-    	computedSolution.invalidate();
-    };
     @SuppressWarnings("unchecked")
 	private void configureSolutionInvalidation() {
+        ChangeListener<?> solutionInvalidationListener = (bean,oldVal,newVal) -> { computedSolution.invalidate(); };
+        // invalidate the solution when any value is updated
     	Stream.of(TmvParams.pv, TmvParams.fv, TmvParams.pmt, TmvParams.comp_pmt, TmvParams.r,
                 TmvParams.g, TmvParams.n, TmvParams.comp).filter(p->!solveFor.equals(p))
                     .forEach(p->getProperty(p).addListener(solutionInvalidationListener));

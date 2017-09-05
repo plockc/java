@@ -23,20 +23,24 @@ import plock.fx.Controls.DoubleTextField;
 // TODO: bind fv/pv to other accounts
 public class AccountController extends GridPane {
     @FXML protected Finance finance;
-    @FXML private ChoiceBox<String> solveFor;
+    @FXML private ChoiceBox<String> solveFor; // user selection will change the Finance.solveFor
+
+    // used for getting user friendly labels for finance parameter names
     @FXML private Map<String,String> paramToLabel;
-    @FXML private ChoiceBox<AccountController> whichPvForFv;
-    @FXML private ChoiceBox<AccountController> whichFvForPv;
-    @FXML private Button cancelPVImport, cancelFVImport;
+    private Map<String,String> labelToParam = new HashMap<String,String>(); // will be the inverse of paramToLabel
+
+    @FXML private ChoiceBox<AccountController> whichPvForFv; // to import PV values from other accounts as FV
+    @FXML private ChoiceBox<AccountController> whichFvForPv; // to import FV values from other accounts as PV
+    @FXML private Button cancelPVImport, cancelFVImport; // cleared imported PV/FV value
     private SimpleListProperty<AccountController> finances = new SimpleListProperty<AccountController>();
     
-    private Map<String,String> labelToParam = new HashMap<String,String>();
 //    private Set<AccountController> fvSubscribers = new CopyOnWriteArraySet<AccountController>();
 //    private Set<AccountController> pvSubscribers = new CopyOnWriteArraySet<AccountController>();
     private StringProperty name = new SimpleStringProperty("Account");
     private Map<String,TextField> paramToField = new HashMap<String,TextField>();
     @FXML private TextField fvField, pvField, rField, nField, pmtField, compPmtField, gField;
 
+    // simply load the account.fxml as the view for this controller, and set the finance compounding to 12
     public AccountController() {
         FXMLLoader fxmlLoader = new FXMLLoader();
         
@@ -62,16 +66,22 @@ public class AccountController extends GridPane {
     }
     public String toString() {return name.get();}
     public void initialize() {
+        // create the reverse mapping
         paramToLabel.forEach( (k,v) -> { labelToParam.put(v, k); } );
+        // sets up mapping and reverse mapping of choice box string labels and the finance parameter name
         solveFor.setConverter(new StringConverter<String>() {
             public String toString(String paramName) { return paramToLabel.get(paramName); }
             public String fromString(String paramName) { return labelToParam.get(paramName); }
         });
+        // when user changes the solvefor choicebox, we need to update finance to the new solve for param,
+        //   update the bindings to match, and possible reset some of the style for payment / compound payment
         solveFor.getSelectionModel().selectedItemProperty().addListener( (obs, oldVal, newVal) -> {
+            // get the textfield for the old and new values
         	DoubleTextField oldField = (DoubleTextField)lookupAll(".text-field").stream()
         			.filter(field->oldVal.equals(field.getProperties().get("paramName"))).findFirst().get();
         	DoubleTextField newField = (DoubleTextField)lookupAll(".text-field").stream()
         			.filter(field->newVal.equals(field.getProperties().get("paramName"))).findFirst().get();
+            // sort out the styling
             oldField.setStyle("");
             if (oldVal.equals("comp_pmt")) {pmtField.setStyle("");}
             if (oldVal.equals("pmt")) {compPmtField.setStyle("");}
@@ -87,9 +97,12 @@ public class AccountController extends GridPane {
             newField.valProperty().unbindBidirectional(finance.getProperty(TmvParams.valueOf(newVal)));
             finance.solveFor(newVal);
 
+            // oldField was bound to the finance solution, rebind to it's matching finance property
         	oldField.valProperty().bindBidirectional(finance.getProperty(TmvParams.valueOf(oldVal)));
+            // newField was bound to the finance property, rebind to the solution property
             newField.valProperty().bind(finance.getProperty(finance.getSolveFor()));
         });
+        // for all the text fields, map to their finance property, and deal with the current solve for property
         lookupAll(".text-field").forEach( node -> {
             DoubleTextField tf = (DoubleTextField)node;
             String paramName = (String)tf.getProperties().get("paramName");
@@ -100,6 +113,7 @@ public class AccountController extends GridPane {
             	tf.valProperty().bind(finance.getProperty(finance.getSolveFor()));
             }
         });
+        // if selecting an imported value, then grey out the textbox, or if clearing, then ungrey it
         whichPvForFv.valueProperty().addListener((obs, oldPv, newPv) -> {
             if (newPv == null) {
                 finance.getProperty("fv").unbind();
@@ -109,6 +123,7 @@ public class AccountController extends GridPane {
                 fvField.setStyle("-fx-background-color: lightgrey; -fx-opacity: 1;");
             }
         });
+        // if selecting an imported value, then grey out the textbox, or if clearing, then ungrey it
         whichFvForPv.valueProperty().addListener((obs, oldFv, newFv) -> {
             if (newFv == null) {
                 finance.getProperty("pv").unbind();
@@ -129,6 +144,7 @@ public class AccountController extends GridPane {
         cancelPVImport.visibleProperty().bind(whichFvForPv.valueProperty().isNotNull().and(notSolvingPv));
         cancelFVImport.visibleProperty().bind(whichPvForFv.valueProperty().isNotNull().and(notSolvingFv));
 
+        // helper funcation to check if a field is the solve for property
         Function<TextField,BooleanBinding> matchingSolveFor = f -> {
             ObjectProperty solveFor = finance.solveForProperty();
         	return solveFor.isEqualTo(TmvParams.valueOf((String) f.getProperties().get("paramName")));
@@ -142,6 +158,7 @@ public class AccountController extends GridPane {
         	f.disableProperty().bind(disable);
         });
 
+        // will trigger listeners
         cancelPVImport.setOnAction(e -> whichFvForPv.setValue(null));
         cancelFVImport.setOnAction(e -> whichPvForFv.setValue(null));
     }
